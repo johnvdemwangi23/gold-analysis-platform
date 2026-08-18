@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Supabase local files
+supabase/.branches/
+supabase/.temp/
+
+# Local datasets and exports
+data/
+exports/
+backups/
+
+# Secrets
+*.pem
+*.key

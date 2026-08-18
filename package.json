@@ -1,0 +1,12 @@
+{
+  "name": "gold-analysis-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone GOLD/XAUUSD market intelligence and chart analysis platform.",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev": "pnpm --filter analysis dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  }
+}
