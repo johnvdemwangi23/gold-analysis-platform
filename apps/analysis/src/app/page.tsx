@@ -336,12 +336,50 @@ export default function Home() {
                   <p className="text-xs text-zinc-500">
                     Data Source
                   </p>
-                  <p className="mt-1 text-sm text-zinc-300">
-                    Twelve Data
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-600">
-                    UTC normalized
-                  </p>
+
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span className="text-sm text-zinc-300">
+                      Twelve Data
+                    </span>
+                  </div>
+
+                  {activeSnapshot && (
+                    <div className="mt-3 space-y-1 text-xs text-zinc-500">
+                      <p>
+                        Last Fetch{" "}
+                        <span className="text-zinc-300">
+                          {new Date(
+                            activeSnapshot.fetchedAt
+                          ).toLocaleTimeString("en-GB", {
+                            timeZone: "UTC",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: false,
+                          })}{" "}
+                          UTC
+                        </span>
+                      </p>
+
+                      <p>
+                        Latest Candle{" "}
+                        <span className="text-zinc-300">
+                          {new Date(
+                            activeSnapshot.time * 1000
+                          ).toLocaleString("en-GB", {
+                            timeZone: "UTC",
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: false,
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </aside>

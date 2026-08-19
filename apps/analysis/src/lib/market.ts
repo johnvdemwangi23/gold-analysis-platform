@@ -16,6 +16,7 @@ export type MarketSnapshot = {
   instrument: string;
   timeframe: Timeframe;
   candleCount: number;
+  fetchedAt: string;
   time: number;
   open: number;
   high: number;

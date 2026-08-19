@@ -128,6 +128,7 @@ export async function GET(request: NextRequest) {
       timeframe,
       providerInterval,
       timezone: "UTC",
+      fetchedAt: new Date().toISOString(),
       candleCount: candles.length,
       candles,
     });
