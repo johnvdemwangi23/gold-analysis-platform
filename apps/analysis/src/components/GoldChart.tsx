@@ -8,17 +8,10 @@ import {
   type CandlestickData,
   type UTCTimestamp,
 } from "lightweight-charts";
-
-type Timeframe =
-  | "M1"
-  | "M5"
-  | "M15"
-  | "M30"
-  | "H1"
-  | "H4"
-  | "D1"
-  | "W1"
-  | "MN1";
+import type {
+  MarketSnapshot,
+  Timeframe,
+} from "@/lib/market";
 
 type MarketCandle = {
   time: number;
@@ -30,7 +23,7 @@ type MarketCandle = {
 
 type MarketDataResponse = {
   instrument: string;
-  timeframe: string;
+  timeframe: Timeframe;
   candleCount: number;
   candles: MarketCandle[];
   error?: string;
@@ -38,6 +31,7 @@ type MarketDataResponse = {
 
 type GoldChartProps = {
   timeframe: Timeframe;
+  onSnapshot: (snapshot: MarketSnapshot) => void;
 };
 
 type OHLC = {
@@ -64,7 +58,10 @@ function formatUtc(time: number) {
   });
 }
 
-export default function GoldChart({ timeframe }: GoldChartProps) {
+export default function GoldChart({
+  timeframe,
+  onSnapshot,
+}: GoldChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   const [status, setStatus] = useState(
@@ -218,6 +215,17 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
 
         if (latest) {
           setOhlc(latest);
+
+          onSnapshot({
+            instrument: result.instrument,
+            timeframe,
+            candleCount: result.candleCount,
+            time: latest.time,
+            open: latest.open,
+            high: latest.high,
+            low: latest.low,
+            close: latest.close,
+          });
         }
 
         setStatus(
@@ -252,7 +260,7 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, [timeframe]);
+  }, [timeframe, onSnapshot]);
 
   return (
     <div className="relative h-full min-h-[600px] w-full">
@@ -265,30 +273,22 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
           <div className="flex gap-4">
             <span>
               <span className="text-zinc-500">O </span>
-              <span className="text-zinc-200">
-                {formatPrice(ohlc.open)}
-              </span>
+              {formatPrice(ohlc.open)}
             </span>
 
             <span>
               <span className="text-zinc-500">H </span>
-              <span className="text-zinc-200">
-                {formatPrice(ohlc.high)}
-              </span>
+              {formatPrice(ohlc.high)}
             </span>
 
             <span>
               <span className="text-zinc-500">L </span>
-              <span className="text-zinc-200">
-                {formatPrice(ohlc.low)}
-              </span>
+              {formatPrice(ohlc.low)}
             </span>
 
             <span>
               <span className="text-zinc-500">C </span>
-              <span className="text-zinc-200">
-                {formatPrice(ohlc.close)}
-              </span>
+              {formatPrice(ohlc.close)}
             </span>
           </div>
         </div>

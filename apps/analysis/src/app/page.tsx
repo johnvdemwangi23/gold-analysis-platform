@@ -1,21 +1,16 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import GoldChart from "@/components/GoldChart";
-
-const timeframes = [
-  "M1",
-  "M5",
-  "M15",
-  "M30",
-  "H1",
-  "H4",
-  "D1",
-  "W1",
-  "MN1",
-] as const;
-
-type Timeframe = (typeof timeframes)[number];
+import {
+  timeframes,
+  type MarketSnapshot,
+  type Timeframe,
+} from "@/lib/market";
 
 const STORAGE_KEY = "gold-platform-timeframe";
 const STORAGE_EVENT = "gold-platform-timeframe-change";
@@ -67,6 +62,14 @@ function getServerHydrationState() {
   return false;
 }
 
+function formatPrice(value: number) {
+  return value.toFixed(2);
+}
+
+function formatChange(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 export default function Home() {
   const timeframe = useSyncExternalStore(
     subscribeTimeframe,
@@ -78,6 +81,16 @@ export default function Home() {
     subscribeHydration,
     getClientHydrationState,
     getServerHydrationState
+  );
+
+  const [marketSnapshot, setMarketSnapshot] =
+    useState<MarketSnapshot | null>(null);
+
+  const handleSnapshot = useCallback(
+    (snapshot: MarketSnapshot) => {
+      setMarketSnapshot(snapshot);
+    },
+    []
   );
 
   if (!hydrated) {
@@ -95,7 +108,6 @@ export default function Home() {
         <section className="flex h-[calc(100vh-4rem)]">
           <aside className="w-56 border-r border-white/10 bg-[#0c0f14] p-4">
             <div className="mb-4 h-3 w-16 animate-pulse rounded bg-white/10" />
-
             <div className="h-16 w-full animate-pulse rounded-lg bg-white/5" />
 
             <div className="mt-8 space-y-3">
@@ -124,7 +136,6 @@ export default function Home() {
             <div className="grid flex-1 grid-cols-[1fr_280px]">
               <section className="m-4 overflow-hidden rounded-lg border border-white/10 bg-[#0b0e13] p-4">
                 <div className="mb-4 h-4 w-28 animate-pulse rounded bg-white/10" />
-
                 <div className="h-[560px] w-full animate-pulse rounded bg-white/[0.035]" />
               </section>
 
@@ -145,6 +156,27 @@ export default function Home() {
     );
   }
 
+  const activeSnapshot =
+    marketSnapshot?.timeframe === timeframe
+      ? marketSnapshot
+      : null;
+
+  const candleChange = activeSnapshot
+    ? activeSnapshot.close - activeSnapshot.open
+    : 0;
+
+  const candleChangePercent =
+    activeSnapshot && activeSnapshot.open !== 0
+      ? (candleChange / activeSnapshot.open) * 100
+      : 0;
+
+  const changeClass =
+    candleChange > 0
+      ? "text-emerald-400"
+      : candleChange < 0
+        ? "text-red-400"
+        : "text-zinc-400";
+
   return (
     <main className="min-h-screen bg-[#090b0f] text-white">
       <header className="flex h-16 items-center justify-between border-b border-white/10 px-6">
@@ -158,8 +190,10 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-          <span className="text-sm text-zinc-400">Platform Online</span>
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          <span className="text-sm text-zinc-400">
+            Platform Online
+          </span>
         </div>
       </header>
 
@@ -170,7 +204,9 @@ export default function Home() {
           </p>
 
           <button className="w-full rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-left">
-            <div className="font-semibold text-amber-300">XAUUSD</div>
+            <div className="font-semibold text-amber-300">
+              XAUUSD
+            </div>
             <div className="mt-1 text-xs text-zinc-500">
               Gold / US Dollar
             </div>
@@ -185,21 +221,39 @@ export default function Home() {
               <div className="rounded-md bg-white/5 px-3 py-2 text-white">
                 Chart
               </div>
-              <div className="px-3 py-2">Indicators</div>
               <div className="px-3 py-2">Market Data</div>
-              <div className="px-3 py-2">Strategy Research</div>
+              <div className="px-3 py-2">Workspace</div>
+              <div className="px-3 py-2">Research</div>
             </div>
           </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-14 items-center justify-between border-b border-white/10 px-5">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-5">
               <div>
-                <span className="font-semibold">XAUUSD</span>
-                <span className="ml-2 text-sm text-zinc-500">
-                  Gold Spot / U.S. Dollar
-                </span>
+                <div>
+                  <span className="font-semibold">XAUUSD</span>
+                  <span className="ml-2 text-sm text-zinc-500">
+                    Gold Spot / U.S. Dollar
+                  </span>
+                </div>
+
+                {activeSnapshot ? (
+                  <div className="mt-0.5 flex items-baseline gap-2">
+                    <span className="text-lg font-semibold">
+                      {formatPrice(activeSnapshot.close)}
+                    </span>
+
+                    <span className={`text-xs ${changeClass}`}>
+                      {formatChange(candleChange)}
+                      {"  "}
+                      ({formatChange(candleChangePercent)}%)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-1 h-4 w-40 animate-pulse rounded bg-white/5" />
+                )}
               </div>
 
               <div className="flex gap-1">
@@ -236,7 +290,10 @@ export default function Home() {
               </div>
 
               <div className="h-full min-h-[600px]">
-                <GoldChart timeframe={timeframe} />
+                <GoldChart
+                  timeframe={timeframe}
+                  onSnapshot={handleSnapshot}
+                />
               </div>
             </section>
 
@@ -247,32 +304,43 @@ export default function Home() {
 
               <div className="mt-4 space-y-3">
                 <div className="rounded-lg border border-white/10 p-4">
-                  <p className="text-xs text-zinc-500">Instrument</p>
-                  <p className="mt-1 font-semibold">XAUUSD</p>
+                  <p className="text-xs text-zinc-500">
+                    Instrument
+                  </p>
+                  <p className="mt-1 font-semibold">
+                    XAUUSD
+                  </p>
                 </div>
 
                 <div className="rounded-lg border border-white/10 p-4">
                   <p className="text-xs text-zinc-500">
                     Active Timeframe
                   </p>
-                  <p className="mt-1 font-semibold">{timeframe}</p>
-                </div>
-
-                <div className="rounded-lg border border-white/10 p-4">
-                  <p className="text-xs text-zinc-500">
-                    H4 Directional Wick
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-400">
-                    Indicator engine pending
+                  <p className="mt-1 font-semibold">
+                    {timeframe}
                   </p>
                 </div>
 
                 <div className="rounded-lg border border-white/10 p-4">
                   <p className="text-xs text-zinc-500">
-                    Fixed Range Volume Profile
+                    Candle Count
                   </p>
-                  <p className="mt-1 text-sm text-zinc-400">
-                    Indicator engine pending
+                  <p className="mt-1 font-semibold">
+                    {activeSnapshot
+                      ? activeSnapshot.candleCount
+                      : "Loading..."}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-white/10 p-4">
+                  <p className="text-xs text-zinc-500">
+                    Data Source
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-300">
+                    Twelve Data
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    UTC normalized
                   </p>
                 </div>
               </div>
