@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -70,6 +71,17 @@ function formatChange(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
+function formatAge(milliseconds: number) {
+  if (milliseconds < 60000) {
+    return `${Math.max(
+      0,
+      Math.floor(milliseconds / 1000)
+    )}s ago`;
+  }
+
+  return `${Math.floor(milliseconds / 60000)}m ago`;
+}
+
 export default function Home() {
   const timeframe = useSyncExternalStore(
     subscribeTimeframe,
@@ -86,12 +98,35 @@ export default function Home() {
   const [marketSnapshot, setMarketSnapshot] =
     useState<MarketSnapshot | null>(null);
 
+  const [isMarketUpdating, setIsMarketUpdating] =
+    useState(false);
+
+  const [statusClock, setStatusClock] =
+    useState(() => Date.now());
+
   const handleSnapshot = useCallback(
     (snapshot: MarketSnapshot) => {
       setMarketSnapshot(snapshot);
     },
     []
   );
+
+  const handleUpdatingChange = useCallback(
+    (updating: boolean) => {
+      setIsMarketUpdating(updating);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setStatusClock(Date.now());
+    }, 30000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   if (!hydrated) {
     return (
@@ -160,6 +195,50 @@ export default function Home() {
     marketSnapshot?.timeframe === timeframe
       ? marketSnapshot
       : null;
+
+  const refreshIntervalMs =
+    timeframe === "D1" ||
+    timeframe === "W1" ||
+    timeframe === "MN1"
+      ? 300000
+      : 120000;
+
+  const staleThresholdMs = refreshIntervalMs * 2;
+
+  const fetchedAtMs = activeSnapshot
+    ? new Date(activeSnapshot.fetchedAt).getTime()
+    : 0;
+
+  const dataAgeMs = activeSnapshot
+    ? Math.max(0, statusClock - fetchedAtMs)
+    : 0;
+
+  const marketStatus =
+    !activeSnapshot
+      ? "Loading"
+      : isMarketUpdating
+        ? "Updating"
+        : dataAgeMs > staleThresholdMs
+          ? "Stale"
+          : "Current";
+
+  const marketStatusDotClass =
+    marketStatus === "Current"
+      ? "bg-emerald-400"
+      : marketStatus === "Updating"
+        ? "bg-amber-400 animate-pulse"
+        : marketStatus === "Stale"
+          ? "bg-red-400"
+          : "bg-zinc-500 animate-pulse";
+
+  const marketStatusTextClass =
+    marketStatus === "Current"
+      ? "text-emerald-400"
+      : marketStatus === "Updating"
+        ? "text-amber-400"
+        : marketStatus === "Stale"
+          ? "text-red-400"
+          : "text-zinc-400";
 
   const candleChange = activeSnapshot
     ? activeSnapshot.close - activeSnapshot.open
@@ -293,6 +372,7 @@ export default function Home() {
                 <GoldChart
                   timeframe={timeframe}
                   onSnapshot={handleSnapshot}
+                  onUpdatingChange={handleUpdatingChange}
                 />
               </div>
             </section>
@@ -329,6 +409,35 @@ export default function Home() {
                     {activeSnapshot
                       ? activeSnapshot.candleCount
                       : "Loading..."}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-white/10 p-4">
+                  <p className="text-xs text-zinc-500">
+                    Market Data Status
+                  </p>
+
+                  <div className="mt-2 flex items-center gap-2">
+                    <span
+                      className={`h-2 w-2 rounded-full ${marketStatusDotClass}`}
+                    />
+
+                    <span
+                      className={`text-sm font-medium ${marketStatusTextClass}`}
+                    >
+                      {marketStatus}
+                    </span>
+                  </div>
+
+                  {activeSnapshot && (
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Updated {formatAge(dataAgeMs)}
+                    </p>
+                  )}
+
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Auto refresh{" "}
+                    {refreshIntervalMs / 60000} min
                   </p>
                 </div>
 

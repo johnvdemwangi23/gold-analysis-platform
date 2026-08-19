@@ -34,6 +34,7 @@ type MarketDataResponse = {
 type GoldChartProps = {
   timeframe: Timeframe;
   onSnapshot: (snapshot: MarketSnapshot) => void;
+  onUpdatingChange: (updating: boolean) => void;
 };
 
 type OHLC = {
@@ -70,6 +71,7 @@ function formatUtc(time: number) {
 export default function GoldChart({
   timeframe,
   onSnapshot,
+  onUpdatingChange,
 }: GoldChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -299,6 +301,7 @@ export default function GoldChart({
          */
         if (age < CACHE_TTL_MS) {
           setLoading(false);
+          onUpdatingChange(false);
           return;
         }
       }
@@ -308,6 +311,7 @@ export default function GoldChart({
        * already have this timeframe cached.
        */
       setLoading(!cached);
+      onUpdatingChange(true);
 
       try {
         const response = await fetch(
@@ -345,6 +349,7 @@ export default function GoldChart({
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false);
+          onUpdatingChange(false);
         }
       }
     }
@@ -362,6 +367,8 @@ export default function GoldChart({
       if (document.visibilityState !== "visible") {
         return;
       }
+
+      onUpdatingChange(true);
 
       try {
         const response = await fetch(
@@ -463,6 +470,10 @@ export default function GoldChart({
           "Latest candle refresh failed:",
           err
         );
+      } finally {
+        if (!controller.signal.aborted) {
+          onUpdatingChange(false);
+        }
       }
     }
 
@@ -476,7 +487,7 @@ export default function GoldChart({
       window.clearInterval(refreshTimer);
       controller.abort();
     };
-  }, [timeframe, onSnapshot]);
+  }, [timeframe, onSnapshot, onUpdatingChange]);
 
   return (
     <div className="relative h-full min-h-[600px] w-full">
