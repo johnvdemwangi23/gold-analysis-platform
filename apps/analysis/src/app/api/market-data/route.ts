@@ -70,10 +70,13 @@ export async function GET(request: NextRequest) {
   const timeframe = requested as PlatformInterval;
   const providerInterval = intervalMap[timeframe];
 
+  const latestOnly =
+    request.nextUrl.searchParams.get("latest") === "1";
+
   const params = new URLSearchParams({
     symbol: "XAU/USD",
     interval: providerInterval,
-    outputsize: "300",
+    outputsize: latestOnly ? "1" : "300",
     apikey: apiKey,
   });
 

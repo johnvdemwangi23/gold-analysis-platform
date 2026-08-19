@@ -273,6 +273,18 @@ export default function GoldChart({
       const cached = marketDataCache.get(timeframe);
 
       /*
+       * If this timeframe has never been loaded,
+       * immediately remove the previous timeframe.
+       * This prevents stale candles remaining visible
+       * while the new request is in progress.
+       */
+      if (!cached) {
+        candleSeries.setData([]);
+        setOhlc(null);
+        setStatus(`Loading XAU/USD ${timeframe} data...`);
+      }
+
+      /*
        * Display previously loaded data immediately.
        */
       if (cached) {
@@ -339,7 +351,129 @@ export default function GoldChart({
 
     loadMarketData();
 
+    const refreshMs =
+      timeframe === "D1" ||
+      timeframe === "W1" ||
+      timeframe === "MN1"
+        ? 300000
+        : 120000;
+
+    async function refreshLatestCandle() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/market-data?interval=${timeframe}&latest=1`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
+
+        const result =
+          (await response.json()) as MarketDataResponse;
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ?? "Latest candle refresh failed."
+          );
+        }
+
+        const latest = result.candles.at(-1);
+
+        if (!latest || controller.signal.aborted) {
+          return;
+        }
+
+        const candleSeries = candleSeriesRef.current;
+
+        if (!candleSeries) {
+          return;
+        }
+
+        candleSeries.update({
+          time: latest.time as UTCTimestamp,
+          open: latest.open,
+          high: latest.high,
+          low: latest.low,
+          close: latest.close,
+        });
+
+        const cached = marketDataCache.get(timeframe);
+
+        let mergedCandles = cached
+          ? [...cached.candles]
+          : [];
+
+        const lastCached =
+          mergedCandles.at(-1);
+
+        if (
+          lastCached &&
+          lastCached.time === latest.time
+        ) {
+          mergedCandles[
+            mergedCandles.length - 1
+          ] = latest;
+        } else {
+          mergedCandles.push(latest);
+
+          if (mergedCandles.length > 300) {
+            mergedCandles =
+              mergedCandles.slice(-300);
+          }
+        }
+
+        const merged: MarketDataResponse = {
+          ...result,
+          candleCount: mergedCandles.length,
+          candles: mergedCandles,
+        };
+
+        marketDataCache.set(
+          timeframe,
+          merged
+        );
+
+        setOhlc(latest);
+
+        onSnapshot({
+          instrument: result.instrument,
+          timeframe,
+          candleCount: mergedCandles.length,
+          fetchedAt: result.fetchedAt,
+          time: latest.time,
+          open: latest.open,
+          high: latest.high,
+          low: latest.low,
+          close: latest.close,
+        });
+
+        setStatus(
+          `${result.instrument} · ${timeframe} · ${mergedCandles.length} candles`
+        );
+      } catch (err) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        console.error(
+          "Latest candle refresh failed:",
+          err
+        );
+      }
+    }
+
+    const refreshTimer =
+      window.setInterval(
+        refreshLatestCandle,
+        refreshMs
+      );
+
     return () => {
+      window.clearInterval(refreshTimer);
       controller.abort();
     };
   }, [timeframe, onSnapshot]);
@@ -382,9 +516,26 @@ export default function GoldChart({
       />
 
       {loading && (
-        <div className="pointer-events-none absolute inset-x-4 bottom-12 z-30">
-          <div className="h-1 overflow-hidden rounded bg-white/5">
-            <div className="h-full w-1/3 animate-pulse rounded bg-white/20" />
+        <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden bg-[#0b0e13]">
+          <div
+            className="absolute inset-0 opacity-60"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
+              backgroundSize: "80px 60px",
+            }}
+          />
+
+          <div className="absolute inset-x-10 bottom-16 top-24 flex items-end gap-3 opacity-25">
+            {[38, 55, 44, 70, 52, 84, 61, 73, 48, 66, 78, 57, 86, 69, 76].map(
+              (height, index) => (
+                <div
+                  key={index}
+                  className="flex-1 animate-pulse rounded-sm bg-white/20"
+                  style={{ height: `${height}%` }}
+                />
+              )
+            )}
           </div>
         </div>
       )}
