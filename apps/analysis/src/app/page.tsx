@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import GoldChart from "@/components/GoldChart";
 
 const timeframes = [
@@ -17,8 +17,133 @@ const timeframes = [
 
 type Timeframe = (typeof timeframes)[number];
 
+const STORAGE_KEY = "gold-platform-timeframe";
+const STORAGE_EVENT = "gold-platform-timeframe-change";
+
+function getStoredTimeframe(): Timeframe {
+  const saved = window.localStorage.getItem(STORAGE_KEY);
+
+  if (saved && timeframes.includes(saved as Timeframe)) {
+    return saved as Timeframe;
+  }
+
+  return "H4";
+}
+
+function getServerTimeframe(): Timeframe {
+  return "H4";
+}
+
+function subscribeTimeframe(callback: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) {
+      callback();
+    }
+  };
+
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(STORAGE_EVENT, callback);
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(STORAGE_EVENT, callback);
+  };
+}
+
+function saveTimeframe(timeframe: Timeframe) {
+  window.localStorage.setItem(STORAGE_KEY, timeframe);
+  window.dispatchEvent(new Event(STORAGE_EVENT));
+}
+
+function subscribeHydration() {
+  return () => {};
+}
+
+function getClientHydrationState() {
+  return true;
+}
+
+function getServerHydrationState() {
+  return false;
+}
+
 export default function Home() {
-  const [timeframe, setTimeframe] = useState<Timeframe>("H4");
+  const timeframe = useSyncExternalStore(
+    subscribeTimeframe,
+    getStoredTimeframe,
+    getServerTimeframe
+  );
+
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    getClientHydrationState,
+    getServerHydrationState
+  );
+
+  if (!hydrated) {
+    return (
+      <main className="min-h-screen bg-[#090b0f] text-white">
+        <header className="flex h-16 items-center justify-between border-b border-white/10 px-6">
+          <div className="space-y-2">
+            <div className="h-4 w-44 animate-pulse rounded bg-white/10" />
+            <div className="h-3 w-32 animate-pulse rounded bg-white/5" />
+          </div>
+
+          <div className="h-4 w-24 animate-pulse rounded bg-white/10" />
+        </header>
+
+        <section className="flex h-[calc(100vh-4rem)]">
+          <aside className="w-56 border-r border-white/10 bg-[#0c0f14] p-4">
+            <div className="mb-4 h-3 w-16 animate-pulse rounded bg-white/10" />
+
+            <div className="h-16 w-full animate-pulse rounded-lg bg-white/5" />
+
+            <div className="mt-8 space-y-3">
+              <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+              <div className="h-9 w-full animate-pulse rounded bg-white/5" />
+              <div className="h-9 w-full animate-pulse rounded bg-white/5" />
+              <div className="h-9 w-full animate-pulse rounded bg-white/5" />
+              <div className="h-9 w-full animate-pulse rounded bg-white/5" />
+            </div>
+          </aside>
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex h-14 items-center gap-4 border-b border-white/10 px-5">
+              <div className="h-4 w-40 animate-pulse rounded bg-white/10" />
+
+              <div className="flex gap-1">
+                {Array.from({ length: 9 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="h-7 w-9 animate-pulse rounded bg-white/5"
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid flex-1 grid-cols-[1fr_280px]">
+              <section className="m-4 overflow-hidden rounded-lg border border-white/10 bg-[#0b0e13] p-4">
+                <div className="mb-4 h-4 w-28 animate-pulse rounded bg-white/10" />
+
+                <div className="h-[560px] w-full animate-pulse rounded bg-white/[0.035]" />
+              </section>
+
+              <aside className="border-l border-white/10 bg-[#0c0f14] p-4">
+                <div className="h-3 w-32 animate-pulse rounded bg-white/10" />
+
+                <div className="mt-4 space-y-3">
+                  <div className="h-20 animate-pulse rounded-lg bg-white/5" />
+                  <div className="h-20 animate-pulse rounded-lg bg-white/5" />
+                  <div className="h-24 animate-pulse rounded-lg bg-white/5" />
+                  <div className="h-24 animate-pulse rounded-lg bg-white/5" />
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#090b0f] text-white">
@@ -81,7 +206,7 @@ export default function Home() {
                 {timeframes.map((item) => (
                   <button
                     key={item}
-                    onClick={() => setTimeframe(item)}
+                    onClick={() => saveTimeframe(item)}
                     className={`rounded px-2.5 py-1 text-xs transition ${
                       timeframe === item
                         ? "bg-amber-400 text-black"
