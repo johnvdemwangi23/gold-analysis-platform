@@ -40,6 +40,30 @@ type GoldChartProps = {
   timeframe: Timeframe;
 };
 
+type OHLC = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+function formatPrice(value: number) {
+  return value.toFixed(2);
+}
+
+function formatUtc(time: number) {
+  return new Date(time * 1000).toLocaleString("en-GB", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function GoldChart({ timeframe }: GoldChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -48,11 +72,13 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
   );
 
   const [error, setError] = useState<string | null>(null);
+  const [ohlc, setOhlc] = useState<OHLC | null>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
     setError(null);
+    setOhlc(null);
     setStatus(`Loading XAU/USD ${timeframe} data...`);
 
     const container = chartContainerRef.current;
@@ -116,6 +142,27 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
       },
     });
 
+    chart.subscribeCrosshairMove((param) => {
+      const item = param.seriesData.get(candleSeries);
+
+      if (
+        item &&
+        "open" in item &&
+        "high" in item &&
+        "low" in item &&
+        "close" in item &&
+        typeof item.time === "number"
+      ) {
+        setOhlc({
+          time: item.time,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          close: item.close,
+        });
+      }
+    });
+
     const controller = new AbortController();
 
     async function loadMarketData() {
@@ -148,7 +195,30 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
 
         candleSeries.setData(candles);
 
-        chart.timeScale().fitContent();
+        const visibleBars =
+          timeframe === "MN1"
+            ? 120
+            : timeframe === "W1"
+              ? 156
+              : timeframe === "D1"
+                ? 180
+                : 200;
+
+        const firstVisible = Math.max(
+          0,
+          candles.length - visibleBars
+        );
+
+        chart.timeScale().setVisibleLogicalRange({
+          from: firstVisible,
+          to: candles.length + 4,
+        });
+
+        const latest = result.candles.at(-1);
+
+        if (latest) {
+          setOhlc(latest);
+        }
 
         setStatus(
           `${result.instrument} · ${result.timeframe} · ${result.candleCount} candles`
@@ -186,6 +256,44 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
 
   return (
     <div className="relative h-full min-h-[600px] w-full">
+      {ohlc && (
+        <div className="pointer-events-none absolute left-4 top-16 z-20 rounded-md bg-[#0b0e13]/90 px-3 py-2 text-xs backdrop-blur">
+          <div className="mb-1 text-zinc-500">
+            {formatUtc(ohlc.time)} UTC
+          </div>
+
+          <div className="flex gap-4">
+            <span>
+              <span className="text-zinc-500">O </span>
+              <span className="text-zinc-200">
+                {formatPrice(ohlc.open)}
+              </span>
+            </span>
+
+            <span>
+              <span className="text-zinc-500">H </span>
+              <span className="text-zinc-200">
+                {formatPrice(ohlc.high)}
+              </span>
+            </span>
+
+            <span>
+              <span className="text-zinc-500">L </span>
+              <span className="text-zinc-200">
+                {formatPrice(ohlc.low)}
+              </span>
+            </span>
+
+            <span>
+              <span className="text-zinc-500">C </span>
+              <span className="text-zinc-200">
+                {formatPrice(ohlc.close)}
+              </span>
+            </span>
+          </div>
+        </div>
+      )}
+
       <div
         ref={chartContainerRef}
         className="h-full min-h-[600px] w-full"
@@ -197,4 +305,3 @@ export default function GoldChart({ timeframe }: GoldChartProps) {
     </div>
   );
 }
-
