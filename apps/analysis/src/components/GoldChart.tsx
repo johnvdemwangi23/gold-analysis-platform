@@ -52,6 +52,13 @@ const marketDataCache = new Map<
 
 const CACHE_TTL_MS = 15000;
 
+const WORKSPACE_STORAGE_KEY =
+  "gold-platform-workspace-v1";
+
+const SAVE_WORKSPACE_EVENT =
+  "gold-platform-save-workspace";
+
+
 function formatPrice(value: number) {
   return value.toFixed(2);
 }
@@ -82,6 +89,9 @@ export default function GoldChart({
   const candleSeriesRef = useRef<
     ISeriesApi<"Candlestick"> | null
   >(null);
+
+  const initializedRangeRef =
+    useRef<Timeframe | null>(null);
 
   const [status, setStatus] = useState(
     `Loading XAU/USD ${timeframe} data...`
@@ -227,24 +237,65 @@ export default function GoldChart({
 
       candleSeries.setData(candles);
 
-      const visibleBars =
-        timeframe === "MN1"
-          ? 120
-          : timeframe === "W1"
-            ? 156
-            : timeframe === "D1"
-              ? 180
-              : 200;
+      if (initializedRangeRef.current !== timeframe) {
+        let restored = false;
 
-      const firstVisible = Math.max(
-        0,
-        candles.length - visibleBars
-      );
+        try {
+          const raw =
+            window.localStorage.getItem(
+              WORKSPACE_STORAGE_KEY
+            );
 
-      chart.timeScale().setVisibleLogicalRange({
-        from: firstVisible,
-        to: candles.length + 4,
-      });
+          if (raw) {
+            const saved = JSON.parse(raw) as {
+              timeframe?: Timeframe;
+              visibleRange?: {
+                from?: number;
+                to?: number;
+              };
+            };
+
+            if (
+              saved.timeframe === timeframe &&
+              saved.visibleRange &&
+              typeof saved.visibleRange.from === "number" &&
+              typeof saved.visibleRange.to === "number"
+            ) {
+              chart.timeScale().setVisibleLogicalRange({
+                from: saved.visibleRange.from,
+                to: saved.visibleRange.to,
+              });
+
+              restored = true;
+            }
+          }
+        } catch {
+          // Ignore malformed local workspace data.
+        }
+
+        if (!restored) {
+          const visibleBars =
+            timeframe === "MN1"
+              ? 120
+              : timeframe === "W1"
+                ? 156
+                : timeframe === "D1"
+                  ? 180
+                  : 200;
+
+          const firstVisible = Math.max(
+            0,
+            candles.length - visibleBars
+          );
+
+          chart.timeScale().setVisibleLogicalRange({
+            from: firstVisible,
+            to: candles.length + 4,
+          });
+        }
+
+        initializedRangeRef.current = timeframe;
+      }
 
       const latest = result.candles.at(-1);
 
@@ -488,6 +539,59 @@ export default function GoldChart({
       controller.abort();
     };
   }, [timeframe, onSnapshot, onUpdatingChange]);
+
+  useEffect(() => {
+    function saveWorkspace() {
+      const chart = chartRef.current;
+
+      if (!chart) {
+        return;
+      }
+
+      const visibleRange =
+        chart.timeScale().getVisibleLogicalRange();
+
+      if (!visibleRange) {
+        return;
+      }
+
+      const savedAt =
+        new Date().toISOString();
+
+      window.localStorage.setItem(
+        WORKSPACE_STORAGE_KEY,
+        JSON.stringify({
+          timeframe,
+          visibleRange: {
+            from: visibleRange.from,
+            to: visibleRange.to,
+          },
+          savedAt,
+        })
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(
+          "gold-platform-workspace-saved",
+          {
+            detail: { savedAt },
+          }
+        )
+      );
+    }
+
+    window.addEventListener(
+      SAVE_WORKSPACE_EVENT,
+      saveWorkspace
+    );
+
+    return () => {
+      window.removeEventListener(
+        SAVE_WORKSPACE_EVENT,
+        saveWorkspace
+      );
+    };
+  }, [timeframe]);
 
   return (
     <div className="relative h-full min-h-[600px] w-full">

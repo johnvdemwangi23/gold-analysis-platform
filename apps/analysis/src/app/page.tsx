@@ -101,6 +101,9 @@ export default function Home() {
   const [isMarketUpdating, setIsMarketUpdating] =
     useState(false);
 
+  const [workspaceSaved, setWorkspaceSaved] =
+    useState(false);
+
   const [statusClock, setStatusClock] =
     useState(() => Date.now());
 
@@ -118,6 +121,12 @@ export default function Home() {
     []
   );
 
+  const handleSaveWorkspace = useCallback(() => {
+    window.dispatchEvent(
+      new Event("gold-platform-save-workspace")
+    );
+  }, []);
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       setStatusClock(Date.now());
@@ -125,6 +134,38 @@ export default function Home() {
 
     return () => {
       window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let resetTimer: number | undefined;
+
+    function handleSaved() {
+      setWorkspaceSaved(true);
+
+      if (resetTimer) {
+        window.clearTimeout(resetTimer);
+      }
+
+      resetTimer = window.setTimeout(() => {
+        setWorkspaceSaved(false);
+      }, 1800);
+    }
+
+    window.addEventListener(
+      "gold-platform-workspace-saved",
+      handleSaved
+    );
+
+    return () => {
+      if (resetTimer) {
+        window.clearTimeout(resetTimer);
+      }
+
+      window.removeEventListener(
+        "gold-platform-workspace-saved",
+        handleSaved
+      );
     };
   }, []);
 
@@ -352,8 +393,13 @@ export default function Home() {
               </div>
             </div>
 
-            <button className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300">
-              Save Workspace
+            <button
+              onClick={handleSaveWorkspace}
+              className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-white/5"
+            >
+              {workspaceSaved
+                ? "Saved"
+                : "Save Workspace"}
             </button>
           </div>
 
