@@ -1,7 +1,24 @@
+"use client";
+
+import { useState } from "react";
 import GoldChart from "@/components/GoldChart";
 
+const timeframes = [
+  "M1",
+  "M5",
+  "M15",
+  "M30",
+  "H1",
+  "H4",
+  "D1",
+  "W1",
+  "MN1",
+] as const;
+
+type Timeframe = (typeof timeframes)[number];
+
 export default function Home() {
-  const timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
+  const [timeframe, setTimeframe] = useState<Timeframe>("H4");
 
   return (
     <main className="min-h-screen bg-[#090b0f] text-white">
@@ -29,7 +46,9 @@ export default function Home() {
 
           <button className="w-full rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-left">
             <div className="font-semibold text-amber-300">XAUUSD</div>
-            <div className="mt-1 text-xs text-zinc-500">Gold / US Dollar</div>
+            <div className="mt-1 text-xs text-zinc-500">
+              Gold / US Dollar
+            </div>
           </button>
 
           <div className="mt-8">
@@ -59,16 +78,17 @@ export default function Home() {
               </div>
 
               <div className="flex gap-1">
-                {timeframes.map((timeframe) => (
+                {timeframes.map((item) => (
                   <button
-                    key={timeframe}
-                    className={`rounded px-2.5 py-1 text-xs ${
-                      timeframe === "H4"
+                    key={item}
+                    onClick={() => setTimeframe(item)}
+                    className={`rounded px-2.5 py-1 text-xs transition ${
+                      timeframe === item
                         ? "bg-amber-400 text-black"
-                        : "text-zinc-400 hover:bg-white/10"
+                        : "text-zinc-400 hover:bg-white/10 hover:text-white"
                     }`}
                   >
-                    {timeframe}
+                    {item}
                   </button>
                 ))}
               </div>
@@ -81,15 +101,17 @@ export default function Home() {
 
           <div className="grid flex-1 grid-cols-[1fr_280px]">
             <section className="relative m-4 overflow-hidden rounded-lg border border-white/10 bg-[#0b0e13]">
-              <div className="absolute left-4 top-4 z-10">
-                <div className="text-sm font-medium">XAUUSD · H4</div>
+              <div className="absolute left-4 top-4 z-10 rounded bg-[#0b0e13]/80 px-2 py-1">
+                <div className="text-sm font-medium">
+                  XAUUSD · {timeframe}
+                </div>
                 <div className="mt-1 text-xs text-zinc-500">
-                  Interactive market chart
+                  Real market data · UTC
                 </div>
               </div>
 
               <div className="h-full min-h-[600px]">
-                <GoldChart />
+                <GoldChart timeframe={timeframe} />
               </div>
             </section>
 
@@ -105,14 +127,18 @@ export default function Home() {
                 </div>
 
                 <div className="rounded-lg border border-white/10 p-4">
-                  <p className="text-xs text-zinc-500">Active Timeframe</p>
-                  <p className="mt-1 font-semibold">H4</p>
+                  <p className="text-xs text-zinc-500">
+                    Active Timeframe
+                  </p>
+                  <p className="mt-1 font-semibold">{timeframe}</p>
                 </div>
 
                 <div className="rounded-lg border border-white/10 p-4">
-                  <p className="text-xs text-zinc-500">H4 Directional Wick</p>
+                  <p className="text-xs text-zinc-500">
+                    H4 Directional Wick
+                  </p>
                   <p className="mt-1 text-sm text-zinc-400">
-                    Awaiting market data
+                    Indicator engine pending
                   </p>
                 </div>
 

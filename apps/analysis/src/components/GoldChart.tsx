@@ -9,6 +9,17 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 
+type Timeframe =
+  | "M1"
+  | "M5"
+  | "M15"
+  | "M30"
+  | "H1"
+  | "H4"
+  | "D1"
+  | "W1"
+  | "MN1";
+
 type MarketCandle = {
   time: number;
   open: number;
@@ -25,19 +36,31 @@ type MarketDataResponse = {
   error?: string;
 };
 
-export default function GoldChart() {
+type GoldChartProps = {
+  timeframe: Timeframe;
+};
+
+export default function GoldChart({ timeframe }: GoldChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState("Loading real XAU/USD H4 data...");
+
+  const [status, setStatus] = useState(
+    `Loading XAU/USD ${timeframe} data...`
+  );
+
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
+
+    setError(null);
+    setStatus(`Loading XAU/USD ${timeframe} data...`);
 
     const container = chartContainerRef.current;
 
     const chart = createChart(container, {
       width: container.clientWidth,
       height: container.clientHeight,
+
       layout: {
         background: {
           type: ColorType.Solid,
@@ -45,18 +68,26 @@ export default function GoldChart() {
         },
         textColor: "#8b93a7",
       },
+
       grid: {
-        vertLines: { color: "#171b22" },
-        horzLines: { color: "#171b22" },
+        vertLines: {
+          color: "#171b22",
+        },
+        horzLines: {
+          color: "#171b22",
+        },
       },
+
       rightPriceScale: {
         borderColor: "#222831",
       },
+
       timeScale: {
         borderColor: "#222831",
         timeVisible: true,
         secondsVisible: false,
       },
+
       crosshair: {
         vertLine: {
           color: "#687080",
@@ -77,6 +108,7 @@ export default function GoldChart() {
       borderVisible: false,
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+
       priceFormat: {
         type: "price",
         precision: 2,
@@ -84,21 +116,26 @@ export default function GoldChart() {
       },
     });
 
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function loadMarketData() {
       try {
-        const response = await fetch("/api/market-data?interval=H4", {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `/api/market-data?interval=${timeframe}`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
 
-        const result = (await response.json()) as MarketDataResponse;
+        const result =
+          (await response.json()) as MarketDataResponse;
 
         if (!response.ok) {
-          throw new Error(result.error ?? "Market data request failed.");
+          throw new Error(
+            result.error ?? "Market data request failed."
+          );
         }
-
-        if (cancelled) return;
 
         const candles: CandlestickData<UTCTimestamp>[] =
           result.candles.map((candle) => ({
@@ -110,16 +147,19 @@ export default function GoldChart() {
           }));
 
         candleSeries.setData(candles);
+
         chart.timeScale().fitContent();
 
         setStatus(
-          `${result.instrument} · ${result.timeframe} · ${result.candleCount} real candles`
+          `${result.instrument} · ${result.timeframe} · ${result.candleCount} candles`
         );
       } catch (err) {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
 
         const message =
-          err instanceof Error ? err.message : "Unable to load market data.";
+          err instanceof Error
+            ? err.message
+            : "Unable to load market data.";
 
         setError(message);
         setStatus("Market data unavailable");
@@ -138,19 +178,23 @@ export default function GoldChart() {
     resizeObserver.observe(container);
 
     return () => {
-      cancelled = true;
+      controller.abort();
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, []);
+  }, [timeframe]);
 
   return (
     <div className="relative h-full min-h-[600px] w-full">
-      <div ref={chartContainerRef} className="h-full min-h-[600px] w-full" />
+      <div
+        ref={chartContainerRef}
+        className="h-full min-h-[600px] w-full"
+      />
 
-      <div className="pointer-events-none absolute bottom-3 left-4 rounded bg-black/60 px-3 py-1.5 text-xs text-zinc-400">
+      <div className="pointer-events-none absolute bottom-3 left-4 rounded bg-black/70 px-3 py-1.5 text-xs text-zinc-400">
         {error ? `Error: ${error}` : status}
       </div>
     </div>
   );
 }
+
