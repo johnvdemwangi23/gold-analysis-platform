@@ -36,24 +36,80 @@ type TwelveDataResponse = {
   };
 };
 
-function isWeekendFlat(candle: {
-  time: number;
-  high: number;
-  low: number;
-  close: number;
-}): boolean {
-  const date = new Date(candle.time * 1000);
-  const day = date.getUTCDay();
-  const hour = date.getUTCHours();
+const intervalSeconds: Record<string, number> = {
+  "1min": 60,
+  "5min": 300,
+  "15min": 900,
+  "30min": 1800,
+  "1h": 3600,
+  "4h": 14400,
+};
 
-  const marketClosed =
-    day === 6 ||
-    (day === 5 && hour >= 22) ||
-    (day === 0 && hour < 22);
+const newYorkClock = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
-  const flat = candle.high - candle.low <= candle.close * 0.0005;
+const weekdayIndex: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
 
-  return marketClosed && flat;
+/*
+ * Spot gold follows the forex week: it closes on Friday at
+ * 17:00 New York time and reopens on Sunday at 17:00 New York time.
+ * Using New York time keeps this correct through daylight saving changes.
+ */
+const WEEK_CLOSE_MINUTE = 5 * 1440 + 17 * 60;
+const WEEK_OPEN_MINUTE = 17 * 60;
+
+function isMarketClosedAt(unixSeconds: number): boolean {
+  const parts = newYorkClock.formatToParts(
+    new Date(unixSeconds * 1000)
+  );
+
+  const weekday =
+    weekdayIndex[
+      parts.find((part) => part.type === "weekday")?.value ?? "Mon"
+    ] ?? 1;
+
+  const hour = Number(
+    parts.find((part) => part.type === "hour")?.value ?? 0
+  );
+
+  const minute = Number(
+    parts.find((part) => part.type === "minute")?.value ?? 0
+  );
+
+  const minuteOfWeek = weekday * 1440 + hour * 60 + minute;
+
+  return (
+    minuteOfWeek >= WEEK_CLOSE_MINUTE ||
+    minuteOfWeek < WEEK_OPEN_MINUTE
+  );
+}
+
+/*
+ * A candle is removed only when its whole period falls inside the
+ * weekend closure, so the last candle before the close and the first
+ * candle after the open are kept.
+ */
+function isWeekendCandle(
+  startTime: number,
+  durationSeconds: number
+): boolean {
+  return (
+    isMarketClosedAt(startTime) &&
+    isMarketClosedAt(startTime + durationSeconds - 1)
+  );
 }
 
 function toUnixTime(datetime: string): number {
@@ -144,14 +200,11 @@ export async function GET(request: NextRequest) {
           Number.isFinite(candle.close)
       )
       .sort((a, b) => a.time - b.time)
-      .filter(
-        (candle) =>
-          !(
-            (providerInterval.endsWith("min") ||
-              providerInterval.endsWith("h")) &&
-            isWeekendFlat(candle)
-          )
-      );
+      .filter((candle) => {
+        const duration = intervalSeconds[providerInterval];
+
+        return !duration || !isWeekendCandle(candle.time, duration);
+      });
 
     return Response.json({
       instrument: "XAUUSD",
