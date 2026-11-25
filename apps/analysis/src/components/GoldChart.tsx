@@ -225,7 +225,7 @@ export default function GoldChart({
 
     const controller = new AbortController();
 
-    function displayResult(result: MarketDataResponse) {
+    const displayResult = (result: MarketDataResponse) => {
       const candles: CandlestickData<UTCTimestamp>[] =
         result.candles.map((candle) => ({
           time: candle.time as UTCTimestamp,
@@ -320,7 +320,7 @@ export default function GoldChart({
       );
     }
 
-    async function loadMarketData() {
+    const loadMarketData = async () => {
       setError(null);
 
       const cached = marketDataCache.get(timeframe);
