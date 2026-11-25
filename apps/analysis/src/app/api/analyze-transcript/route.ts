@@ -315,6 +315,20 @@ export async function POST(request: NextRequest) {
   const title = asString(body.title).slice(0, 200);
   const source = asString(body.source).slice(0, 200);
 
+  if (title.length < 3) {
+    return Response.json(
+      { error: "Add a title for this text (at least 3 characters)." },
+      { status: 400 }
+    );
+  }
+
+  if (source.length < 2) {
+    return Response.json(
+      { error: "Add the source of this text, such as FOMC or Reuters." },
+      { status: 400 }
+    );
+  }
+
   if (transcript.length < MIN_CHARS) {
     return Response.json(
       {
