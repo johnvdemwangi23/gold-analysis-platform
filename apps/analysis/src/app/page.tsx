@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import Link from "next/link";
 import GoldChart from "@/components/GoldChart";
 import {
   timeframes,
@@ -345,9 +346,15 @@ export default function Home() {
               <div className="rounded-md bg-white/5 px-3 py-2 text-white">
                 Chart
               </div>
-              <div className="px-3 py-2">Market Data</div>
-              <div className="px-3 py-2">Workspace</div>
-              <div className="px-3 py-2">Research</div>
+              <Link
+                href="/transcripts"
+                className="block rounded-md px-3 py-2 transition hover:bg-white/5 hover:text-white"
+              >
+                Transcripts
+              </Link>
+              <div className="px-3 py-2 text-zinc-600">
+                News (soon)
+              </div>
             </div>
           </div>
         </aside>
