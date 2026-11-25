@@ -15,6 +15,8 @@ const HISTORY_KEY = "gold-platform-analyses-v1";
 const ACCESS_CODE_KEY = "gold-platform-access-code";
 const STORE_EVENT = "gold-platform-store-change";
 const MAX_HISTORY = 15;
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const CODE_LENGTH = 24;
 const MIN_CHARS = 200;
 const MAX_CHARS = 60000;
 
@@ -44,6 +46,29 @@ function setStored(key: string, value: string) {
   }
 
   window.dispatchEvent(new Event(STORE_EVENT));
+}
+
+/*
+ * 24 characters from a 31 character alphabet (no 0, O, 1, I or L, which are
+ * easy to confuse), shown in six groups of four. That is about 119 bits.
+ * Bytes at or above the limit are skipped so every character is equally likely.
+ */
+function generateAccessCode(): string {
+  const limit = 256 - (256 % CODE_ALPHABET.length);
+  const chars: string[] = [];
+
+  while (chars.length < CODE_LENGTH) {
+    const bytes = new Uint8Array(32);
+    window.crypto.getRandomValues(bytes);
+
+    for (const byte of bytes) {
+      if (byte < limit && chars.length < CODE_LENGTH) {
+        chars.push(CODE_ALPHABET[byte % CODE_ALPHABET.length]);
+      }
+    }
+  }
+
+  return (chars.join("").match(/.{4}/g) ?? []).join("-");
 }
 
 function parseHistory(raw: string | null): SavedAnalysis[] {
@@ -254,6 +279,8 @@ export default function TranscriptsPage() {
   const [transcript, setTranscript] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCode, setShowCode] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const [current, setCurrent] = useState<TranscriptAnalysis | null>(null);
   const [currentLabel, setCurrentLabel] = useState("");
 
@@ -261,6 +288,23 @@ export default function TranscriptsPage() {
   const tooShort = length < MIN_CHARS;
   const tooLong = length > MAX_CHARS;
   const accessCode = storedCode ?? "";
+  const missingDetails = title.trim().length < 3 || source.trim().length < 2;
+
+  function handleGenerateCode() {
+    setStored(ACCESS_CODE_KEY, generateAccessCode());
+    setShowCode(true);
+    setCodeCopied(false);
+  }
+
+  async function handleCopyCode() {
+    try {
+      await navigator.clipboard.writeText(accessCode);
+      setCodeCopied(true);
+      window.setTimeout(() => setCodeCopied(false), 1800);
+    } catch {
+      setShowCode(true);
+    }
+  }
 
   async function analyze() {
     setLoading(true);
@@ -285,7 +329,7 @@ export default function TranscriptsPage() {
         throw new Error(data.error ?? "The analysis failed.");
       }
 
-      const label = title.trim() || data.analysis.headline.slice(0, 70);
+      const label = title.trim();
 
       const entry: SavedAnalysis = {
         id: `${Date.now()}`,
@@ -342,27 +386,44 @@ export default function TranscriptsPage() {
             </p>
 
             <div className="mt-3 space-y-3">
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Title (optional), e.g. Powell press conference"
-                className="w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
-              />
+              <label className="block">
+                <span className="text-xs text-zinc-400">
+                  Title <span className="text-amber-400">*</span>
+                </span>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="e.g. Powell press conference"
+                  required
+                  className="mt-1 w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+                />
+              </label>
 
-              <input
-                value={source}
-                onChange={(event) => setSource(event.target.value)}
-                placeholder="Source (optional), e.g. FOMC, 18 Dec"
-                className="w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
-              />
+              <label className="block">
+                <span className="text-xs text-zinc-400">
+                  Source <span className="text-amber-400">*</span>
+                </span>
+                <input
+                  value={source}
+                  onChange={(event) => setSource(event.target.value)}
+                  placeholder="e.g. FOMC, 18 Dec"
+                  required
+                  className="mt-1 w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+                />
+              </label>
 
-              <textarea
-                value={transcript}
-                onChange={(event) => setTranscript(event.target.value)}
-                placeholder="Paste the speech, transcript, statement or article here"
-                rows={14}
-                className="w-full resize-y rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
-              />
+              <label className="block">
+                <span className="text-xs text-zinc-400">
+                  Text <span className="text-amber-400">*</span>
+                </span>
+                <textarea
+                  value={transcript}
+                  onChange={(event) => setTranscript(event.target.value)}
+                  placeholder="Paste the speech, transcript, statement or article here"
+                  rows={14}
+                  className="mt-1 w-full resize-y rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+                />
+              </label>
 
               <p
                 className={`text-xs ${
@@ -374,22 +435,69 @@ export default function TranscriptsPage() {
                 {length > 0 && tooShort ? ` (at least ${MIN_CHARS} needed)` : ""}
               </p>
 
-              <input
-                type="password"
-                value={accessCode}
-                onChange={(event) => setStored(ACCESS_CODE_KEY, event.target.value)}
-                placeholder="Access code"
-                autoComplete="off"
-                className="w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
-              />
+              <div>
+                <span className="text-xs text-zinc-400">
+                  Access code <span className="text-amber-400">*</span>
+                </span>
+
+                <div className="mt-1 flex gap-2">
+                  <input
+                    type={showCode ? "text" : "password"}
+                    value={accessCode}
+                    onChange={(event) => setStored(ACCESS_CODE_KEY, event.target.value)}
+                    placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="min-w-0 flex-1 rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 font-mono text-xs outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCode((value) => !value)}
+                    className="rounded-md border border-white/10 px-2.5 text-xs text-zinc-300 transition hover:bg-white/5"
+                  >
+                    {showCode ? "Hide" : "Show"}
+                  </button>
+                </div>
+
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerateCode}
+                    className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-white/5"
+                  >
+                    Generate new code
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    disabled={!accessCode}
+                    className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {codeCopied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+
+                <p className="mt-2 text-xs leading-relaxed text-zinc-600">
+                  This must match ANALYSIS_ACCESS_CODE in Vercel. After generating a
+                  code, copy it there and redeploy.
+                </p>
+              </div>
 
               <button
                 onClick={analyze}
-                disabled={loading || tooShort || tooLong || !accessCode}
+                disabled={loading || tooShort || tooLong || missingDetails || !accessCode}
                 className="w-full rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {loading ? "Analysing..." : "Analyse for gold"}
               </button>
+
+              {missingDetails && length > 0 && (
+                <p className="text-xs text-zinc-500">
+                  Add a title and a source to continue.
+                </p>
+              )}
 
               {error && (
                 <p className="rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-300">
