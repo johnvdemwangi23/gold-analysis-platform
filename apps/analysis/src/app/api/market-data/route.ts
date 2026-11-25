@@ -36,6 +36,26 @@ type TwelveDataResponse = {
   };
 };
 
+function isWeekendFlat(candle: {
+  time: number;
+  high: number;
+  low: number;
+  close: number;
+}): boolean {
+  const date = new Date(candle.time * 1000);
+  const day = date.getUTCDay();
+  const hour = date.getUTCHours();
+
+  const marketClosed =
+    day === 6 ||
+    (day === 5 && hour >= 22) ||
+    (day === 0 && hour < 22);
+
+  const flat = candle.high - candle.low <= candle.close * 0.0005;
+
+  return marketClosed && flat;
+}
+
 function toUnixTime(datetime: string): number {
   const iso = datetime.includes(" ")
     ? `${datetime.replace(" ", "T")}Z`
@@ -123,7 +143,15 @@ export async function GET(request: NextRequest) {
           Number.isFinite(candle.low) &&
           Number.isFinite(candle.close)
       )
-      .sort((a, b) => a.time - b.time);
+      .sort((a, b) => a.time - b.time)
+      .filter(
+        (candle) =>
+          !(
+            (providerInterval.endsWith("min") ||
+              providerInterval.endsWith("h")) &&
+            isWeekendFlat(candle)
+          )
+      );
 
     return Response.json({
       instrument: "XAUUSD",
