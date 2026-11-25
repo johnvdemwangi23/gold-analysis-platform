@@ -281,13 +281,17 @@ export default function Home() {
           ? "text-red-400"
           : "text-zinc-400";
 
+  const referenceClose = activeSnapshot
+    ? (activeSnapshot.previousClose ?? activeSnapshot.open)
+    : 0;
+
   const candleChange = activeSnapshot
-    ? activeSnapshot.close - activeSnapshot.open
+    ? activeSnapshot.close - referenceClose
     : 0;
 
   const candleChangePercent =
-    activeSnapshot && activeSnapshot.open !== 0
-      ? (candleChange / activeSnapshot.open) * 100
+    activeSnapshot && referenceClose !== 0
+      ? (candleChange / referenceClose) * 100
       : 0;
 
   const changeClass =
@@ -348,7 +352,7 @@ export default function Home() {
           </div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex h-14 items-center justify-between border-b border-white/10 px-5">
             <div className="flex items-center gap-5">
               <div>
@@ -369,6 +373,10 @@ export default function Home() {
                       {formatChange(candleChange)}
                       {"  "}
                       ({formatChange(candleChangePercent)}%)
+                    </span>
+
+                    <span className="text-[11px] text-zinc-600">
+                      vs prev close
                     </span>
                   </div>
                 ) : (
@@ -403,18 +411,9 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="grid flex-1 grid-cols-[1fr_280px]">
-            <section className="relative m-4 overflow-hidden rounded-lg border border-white/10 bg-[#0b0e13]">
-              <div className="absolute left-4 top-4 z-10 rounded bg-[#0b0e13]/80 px-2 py-1">
-                <div className="text-sm font-medium">
-                  XAUUSD · {timeframe}
-                </div>
-                <div className="mt-1 text-xs text-zinc-500">
-                  Real market data · UTC
-                </div>
-              </div>
-
-              <div className="h-full min-h-[600px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px]">
+            <section className="relative m-4 min-h-0 overflow-hidden rounded-lg border border-white/10 bg-[#0b0e13]">
+              <div className="h-full">
                 <GoldChart
                   timeframe={timeframe}
                   onSnapshot={handleSnapshot}
@@ -423,7 +422,7 @@ export default function Home() {
               </div>
             </section>
 
-            <aside className="border-l border-white/10 bg-[#0c0f14] p-4">
+            <aside className="overflow-y-auto border-l border-white/10 bg-[#0c0f14] p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 Market Intelligence
               </p>
