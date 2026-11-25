@@ -1,0 +1,459 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import type {
+  Direction,
+  GoldBias,
+  RateOutlook,
+  SavedAnalysis,
+  SpeakerTone,
+  TranscriptAnalysis,
+} from "@/lib/analysis";
+
+const HISTORY_KEY = "gold-platform-analyses-v1";
+const ACCESS_CODE_KEY = "gold-platform-access-code";
+const STORE_EVENT = "gold-platform-store-change";
+const MAX_HISTORY = 15;
+const MIN_CHARS = 200;
+const MAX_CHARS = 60000;
+
+function subscribeStore(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(STORE_EVENT, callback);
+
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(STORE_EVENT, callback);
+  };
+}
+
+function useStored(key: string): string | null {
+  return useSyncExternalStore(
+    subscribeStore,
+    () => window.localStorage.getItem(key),
+    () => null
+  );
+}
+
+function setStored(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable or full. The page still works without it.
+  }
+
+  window.dispatchEvent(new Event(STORE_EVENT));
+}
+
+function parseHistory(raw: string | null): SavedAnalysis[] {
+  if (!raw) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    return Array.isArray(parsed) ? (parsed as SavedAnalysis[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const biasStyle: Record<GoldBias, { label: string; box: string; text: string }> = {
+  bullish: {
+    label: "Bullish for gold",
+    box: "border-emerald-400/30 bg-emerald-400/10",
+    text: "text-emerald-300",
+  },
+  bearish: {
+    label: "Bearish for gold",
+    box: "border-red-400/30 bg-red-400/10",
+    text: "text-red-300",
+  },
+  neutral: {
+    label: "Neutral for gold",
+    box: "border-zinc-400/30 bg-zinc-400/10",
+    text: "text-zinc-300",
+  },
+  mixed: {
+    label: "Mixed signals",
+    box: "border-amber-400/30 bg-amber-400/10",
+    text: "text-amber-300",
+  },
+};
+
+const toneLabel: Record<SpeakerTone, string> = {
+  hawkish: "Hawkish",
+  slightly_hawkish: "Slightly hawkish",
+  neutral: "Neutral",
+  slightly_dovish: "Slightly dovish",
+  dovish: "Dovish",
+  not_applicable: "Not applicable",
+};
+
+const rateLabel: Record<RateOutlook, string> = {
+  cuts_likely: "Cuts likely",
+  on_hold: "On hold",
+  hikes_possible: "Hikes possible",
+  higher_for_longer: "Higher for longer",
+  unclear: "Unclear",
+};
+
+const directionLabel: Record<Direction, string> = {
+  up: "Higher",
+  down: "Lower",
+  neutral: "Little change",
+  unclear: "Unclear",
+};
+
+function formatWhen(iso: string) {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function Card({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/10 p-4">
+      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="mt-1 font-semibold">{value}</p>
+      {note && <p className="mt-2 text-xs leading-relaxed text-zinc-400">{note}</p>}
+    </div>
+  );
+}
+
+function ResultView({ analysis }: { analysis: TranscriptAnalysis }) {
+  const style = biasStyle[analysis.goldVerdict.bias];
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-lg border p-5 ${style.box}`}>
+        <p className={`text-xs font-semibold uppercase tracking-wider ${style.text}`}>
+          {style.label} · {analysis.goldVerdict.confidence} confidence
+          {analysis.goldVerdict.horizon ? ` · ${analysis.goldVerdict.horizon}` : ""}
+        </p>
+        <p className="mt-2 text-lg font-semibold leading-snug">{analysis.headline}</p>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-300">
+          {analysis.goldVerdict.reasoning}
+        </p>
+      </div>
+
+      {analysis.summary && (
+        <div className="rounded-lg border border-white/10 p-4">
+          <p className="text-xs text-zinc-500">Summary</p>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-300">{analysis.summary}</p>
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <Card
+          label="Speaker tone"
+          value={toneLabel[analysis.speakerTone]}
+          note={analysis.toneNote}
+        />
+        <Card
+          label="Rate outlook"
+          value={rateLabel[analysis.rates.outlook]}
+          note={analysis.rates.note}
+        />
+        <Card
+          label="US dollar"
+          value={directionLabel[analysis.dollar.direction]}
+          note={analysis.dollar.note}
+        />
+        <Card
+          label="Real yields"
+          value={directionLabel[analysis.realYields.direction]}
+          note={analysis.realYields.note}
+        />
+      </div>
+
+      {analysis.inflationGrowth && (
+        <div className="rounded-lg border border-white/10 p-4">
+          <p className="text-xs text-zinc-500">Inflation and growth</p>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-300">
+            {analysis.inflationGrowth}
+          </p>
+        </div>
+      )}
+
+      {analysis.keyQuotes.length > 0 && (
+        <div className="rounded-lg border border-white/10 p-4">
+          <p className="text-xs text-zinc-500">Key quotes</p>
+
+          <div className="mt-3 space-y-4">
+            {analysis.keyQuotes.map((item, index) => (
+              <div key={index} className="border-l-2 border-amber-400/40 pl-3">
+                <p className="text-sm italic text-zinc-200">&ldquo;{item.quote}&rdquo;</p>
+                {item.whyItMatters && (
+                  <p className="mt-1 text-xs text-zinc-400">{item.whyItMatters}</p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {analysis.droppedQuotes > 0 && (
+            <p className="mt-3 text-xs text-zinc-600">
+              {analysis.droppedQuotes} quote(s) were left out because the exact words
+              were not found in your text.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {analysis.risks.length > 0 && (
+          <div className="rounded-lg border border-white/10 p-4">
+            <p className="text-xs text-zinc-500">What could make this wrong</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-zinc-300">
+              {analysis.risks.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {analysis.watchNext.length > 0 && (
+          <div className="rounded-lg border border-white/10 p-4">
+            <p className="text-xs text-zinc-500">Watch next</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-zinc-300">
+              {analysis.watchNext.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-zinc-600">
+        This is an analysis of the text you supplied. It is not financial advice.
+      </p>
+    </div>
+  );
+}
+
+export default function TranscriptsPage() {
+  const historyRaw = useStored(HISTORY_KEY);
+  const storedCode = useStored(ACCESS_CODE_KEY);
+
+  const history = useMemo(() => parseHistory(historyRaw), [historyRaw]);
+
+  const [title, setTitle] = useState("");
+  const [source, setSource] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [current, setCurrent] = useState<TranscriptAnalysis | null>(null);
+  const [currentLabel, setCurrentLabel] = useState("");
+
+  const length = transcript.trim().length;
+  const tooShort = length < MIN_CHARS;
+  const tooLong = length > MAX_CHARS;
+  const accessCode = storedCode ?? "";
+
+  async function analyze() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/analyze-transcript", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-access-code": accessCode,
+        },
+        body: JSON.stringify({ transcript, title, source }),
+      });
+
+      const data = (await response.json()) as {
+        analysis?: TranscriptAnalysis;
+        error?: string;
+      };
+
+      if (!response.ok || !data.analysis) {
+        throw new Error(data.error ?? "The analysis failed.");
+      }
+
+      const label = title.trim() || data.analysis.headline.slice(0, 70);
+
+      const entry: SavedAnalysis = {
+        id: `${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        title: label,
+        source: source.trim(),
+        analysis: data.analysis,
+      };
+
+      setStored(
+        HISTORY_KEY,
+        JSON.stringify([entry, ...history].slice(0, MAX_HISTORY))
+      );
+
+      setCurrent(data.analysis);
+      setCurrentLabel(label);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The analysis failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function removeEntry(id: string) {
+    setStored(HISTORY_KEY, JSON.stringify(history.filter((item) => item.id !== id)));
+  }
+
+  return (
+    <main className="min-h-screen bg-[#090b0f] text-white">
+      <header className="flex h-16 items-center justify-between border-b border-white/10 px-6">
+        <div>
+          <h1 className="text-lg font-semibold tracking-wide">GOLD Analysis Platform</h1>
+          <p className="text-xs text-zinc-500">Transcript Analysis</p>
+        </div>
+
+        <nav className="flex items-center gap-2 text-sm">
+          <Link
+            href="/"
+            className="rounded-md px-3 py-1.5 text-zinc-400 transition hover:bg-white/5 hover:text-white"
+          >
+            Chart
+          </Link>
+          <span className="rounded-md bg-white/5 px-3 py-1.5 text-white">
+            Transcripts
+          </span>
+        </nav>
+      </header>
+
+      <div className="mx-auto grid max-w-7xl gap-6 p-6 lg:grid-cols-[400px_1fr]">
+        <section className="space-y-4">
+          <div className="rounded-lg border border-white/10 bg-[#0c0f14] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              New analysis
+            </p>
+
+            <div className="mt-3 space-y-3">
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Title (optional), e.g. Powell press conference"
+                className="w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+              />
+
+              <input
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+                placeholder="Source (optional), e.g. FOMC, 18 Dec"
+                className="w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+              />
+
+              <textarea
+                value={transcript}
+                onChange={(event) => setTranscript(event.target.value)}
+                placeholder="Paste the speech, transcript, statement or article here"
+                rows={14}
+                className="w-full resize-y rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+              />
+
+              <p
+                className={`text-xs ${
+                  tooLong ? "text-red-400" : "text-zinc-500"
+                }`}
+              >
+                {length.toLocaleString("en-US")} / {MAX_CHARS.toLocaleString("en-US")}{" "}
+                characters
+                {length > 0 && tooShort ? ` (at least ${MIN_CHARS} needed)` : ""}
+              </p>
+
+              <input
+                type="password"
+                value={accessCode}
+                onChange={(event) => setStored(ACCESS_CODE_KEY, event.target.value)}
+                placeholder="Access code"
+                autoComplete="off"
+                className="w-full rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
+              />
+
+              <button
+                onClick={analyze}
+                disabled={loading || tooShort || tooLong || !accessCode}
+                className="w-full rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {loading ? "Analysing..." : "Analyse for gold"}
+              </button>
+
+              {error && (
+                <p className="rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-300">
+                  {error}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-[#0c0f14] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Saved in this browser
+            </p>
+
+            {history.length === 0 ? (
+              <p className="mt-3 text-xs text-zinc-600">No analyses yet.</p>
+            ) : (
+              <ul className="mt-3 space-y-1">
+                {history.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setCurrent(item.analysis);
+                        setCurrentLabel(item.title);
+                      }}
+                      className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left transition hover:bg-white/5"
+                    >
+                      <span className="block truncate text-sm text-zinc-200">
+                        {item.title}
+                      </span>
+                      <span className="block text-xs text-zinc-600">
+                        {formatWhen(item.createdAt)} ·{" "}
+                        {biasStyle[item.analysis.goldVerdict.bias].label}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => removeEntry(item.id)}
+                      title="Delete"
+                      className="rounded px-2 py-1 text-xs text-zinc-600 transition hover:bg-white/5 hover:text-red-400"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section>
+          {current ? (
+            <div>
+              <p className="mb-3 text-sm text-zinc-500">{currentLabel}</p>
+              <ResultView analysis={current} />
+            </div>
+          ) : (
+            <div className="flex h-full min-h-[320px] items-center justify-center rounded-lg border border-dashed border-white/10 p-8 text-center text-sm text-zinc-600">
+              Paste a Fed speech, press conference or any text that could move gold, then
+              press Analyse. The result appears here.
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
