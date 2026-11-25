@@ -5,8 +5,10 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  LineSeries,
   type CandlestickData,
   type ISeriesApi,
+  type LineData,
   type UTCTimestamp,
 } from "lightweight-charts";
 import type {
@@ -59,6 +61,31 @@ const SAVE_WORKSPACE_EVENT =
   "gold-platform-save-workspace";
 
 
+function sma(
+  candles: MarketCandle[],
+  period: number
+): LineData<UTCTimestamp>[] {
+  const result: LineData<UTCTimestamp>[] = [];
+  let sum = 0;
+
+  for (let i = 0; i < candles.length; i++) {
+    sum += candles[i].close;
+
+    if (i >= period) {
+      sum -= candles[i - period].close;
+    }
+
+    if (i >= period - 1) {
+      result.push({
+        time: candles[i].time as UTCTimestamp,
+        value: sum / period,
+      });
+    }
+  }
+
+  return result;
+}
+
 function formatPrice(value: number) {
   return value.toFixed(2);
 }
@@ -90,6 +117,10 @@ export default function GoldChart({
     ISeriesApi<"Candlestick"> | null
   >(null);
 
+  const ma20Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const ma50Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const latestCandleRef = useRef<OHLC | null>(null);
+
   const initializedRangeRef =
     useRef<Timeframe | null>(null);
 
@@ -100,6 +131,8 @@ export default function GoldChart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ohlc, setOhlc] = useState<OHLC | null>(null);
+  const [showMa20, setShowMa20] = useState(true);
+  const [showMa50, setShowMa50] = useState(true);
 
   /*
    * Create the chart only once.
@@ -172,20 +205,35 @@ export default function GoldChart({
       }
     );
 
+    const ma20Series = chart.addSeries(LineSeries, {
+      color: "#f59e0b",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+
+    const ma50Series = chart.addSeries(LineSeries, {
+      color: "#38bdf8",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
+    ma20Ref.current = ma20Series;
+    ma50Ref.current = ma50Series;
 
     chart.subscribeCrosshairMove((param) => {
-      const item = param.seriesData.get(candleSeries);
+      const item = (
+        param.point && param.time !== undefined
+          ? param.seriesData.get(candleSeries)
+          : undefined
+      ) as CandlestickData | undefined;
 
-      if (
-        item &&
-        "open" in item &&
-        "high" in item &&
-        "low" in item &&
-        "close" in item &&
-        typeof item.time === "number"
-      ) {
+      if (item && typeof item.time === "number") {
         setOhlc({
           time: item.time,
           open: item.open,
@@ -193,6 +241,8 @@ export default function GoldChart({
           low: item.low,
           close: item.close,
         });
+      } else if (latestCandleRef.current) {
+        setOhlc(latestCandleRef.current);
       }
     });
 
@@ -211,6 +261,8 @@ export default function GoldChart({
 
       chartRef.current = null;
       candleSeriesRef.current = null;
+      ma20Ref.current = null;
+      ma50Ref.current = null;
     };
   }, []);
 
@@ -220,8 +272,12 @@ export default function GoldChart({
   useEffect(() => {
     const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
+    const ma20Series = ma20Ref.current;
+    const ma50Series = ma50Ref.current;
 
-    if (!chart || !candleSeries) return;
+    if (!chart || !candleSeries || !ma20Series || !ma50Series) {
+      return;
+    }
 
     const controller = new AbortController();
 
@@ -236,6 +292,8 @@ export default function GoldChart({
         }));
 
       candleSeries.setData(candles);
+      ma20Series.setData(sma(result.candles, 20));
+      ma50Series.setData(sma(result.candles, 50));
 
       if (initializedRangeRef.current !== timeframe) {
         let restored = false;
@@ -298,8 +356,10 @@ export default function GoldChart({
       }
 
       const latest = result.candles.at(-1);
+      const previous = result.candles.at(-2);
 
       if (latest) {
+        latestCandleRef.current = latest;
         setOhlc(latest);
 
         onSnapshot({
@@ -312,6 +372,7 @@ export default function GoldChart({
           high: latest.high,
           low: latest.low,
           close: latest.close,
+          previousClose: previous?.close,
         });
       }
 
@@ -333,6 +394,9 @@ export default function GoldChart({
        */
       if (!cached) {
         candleSeries.setData([]);
+        ma20Series.setData([]);
+        ma50Series.setData([]);
+        latestCandleRef.current = null;
         setOhlc(null);
         setStatus(`Loading XAU/USD ${timeframe} data...`);
       }
@@ -495,6 +559,18 @@ export default function GoldChart({
           merged
         );
 
+        const ma20 = ma20Ref.current;
+        const ma50 = ma50Ref.current;
+
+        if (ma20) {
+          ma20.setData(sma(mergedCandles, 20));
+        }
+
+        if (ma50) {
+          ma50.setData(sma(mergedCandles, 50));
+        }
+
+        latestCandleRef.current = latest;
         setOhlc(latest);
 
         onSnapshot({
@@ -507,6 +583,7 @@ export default function GoldChart({
           high: latest.high,
           low: latest.low,
           close: latest.close,
+          previousClose: mergedCandles.at(-2)?.close,
         });
 
         setStatus(
@@ -539,6 +616,14 @@ export default function GoldChart({
       controller.abort();
     };
   }, [timeframe, onSnapshot, onUpdatingChange]);
+
+  useEffect(() => {
+    ma20Ref.current?.applyOptions({ visible: showMa20 });
+  }, [showMa20]);
+
+  useEffect(() => {
+    ma50Ref.current?.applyOptions({ visible: showMa50 });
+  }, [showMa50]);
 
   useEffect(() => {
     function saveWorkspace() {
@@ -594,14 +679,18 @@ export default function GoldChart({
   }, [timeframe]);
 
   return (
-    <div className="relative h-full min-h-[600px] w-full">
-      {ohlc && (
-        <div className="pointer-events-none absolute left-4 top-16 z-20 rounded-md bg-[#0b0e13]/90 px-3 py-2 text-xs backdrop-blur">
-          <div className="mb-1 text-zinc-500">
-            {formatUtc(ohlc.time)} UTC
-          </div>
+    <div className="relative h-full min-h-[320px] w-full">
+      <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-[#0b0e13]/85 px-3 py-1.5 text-xs backdrop-blur">
+        <span className="text-sm font-semibold text-white">
+          XAUUSD · {timeframe}
+        </span>
 
-          <div className="flex gap-4">
+        {ohlc && (
+          <>
+            <span className="text-zinc-500">
+              {formatUtc(ohlc.time)} UTC
+            </span>
+
             <span>
               <span className="text-zinc-500">O </span>
               {formatPrice(ohlc.open)}
@@ -621,13 +710,39 @@ export default function GoldChart({
               <span className="text-zinc-500">C </span>
               {formatPrice(ohlc.close)}
             </span>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+
+        <span className="pointer-events-auto flex gap-1">
+          <button
+            type="button"
+            onClick={() => setShowMa20((value) => !value)}
+            className={`rounded px-2 py-0.5 text-[11px] transition ${
+              showMa20
+                ? "bg-amber-400/15 text-amber-400"
+                : "text-zinc-600 hover:text-zinc-400"
+            }`}
+          >
+            MA 20
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowMa50((value) => !value)}
+            className={`rounded px-2 py-0.5 text-[11px] transition ${
+              showMa50
+                ? "bg-sky-400/15 text-sky-400"
+                : "text-zinc-600 hover:text-zinc-400"
+            }`}
+          >
+            MA 50
+          </button>
+        </span>
+      </div>
 
       <div
         ref={chartContainerRef}
-        className="h-full min-h-[600px] w-full"
+        className="h-full min-h-[320px] w-full"
       />
 
       {loading && (
