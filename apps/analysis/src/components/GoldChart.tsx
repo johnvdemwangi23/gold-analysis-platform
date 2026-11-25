@@ -61,6 +61,14 @@ const SAVE_WORKSPACE_EVENT =
   "gold-platform-save-workspace";
 
 
+const indicatorDefs = [
+  { id: "ma20", label: "MA 20", period: 20, color: "#f59e0b" },
+  { id: "ma50", label: "MA 50", period: 50, color: "#38bdf8" },
+  { id: "ma200", label: "MA 200", period: 200, color: "#a78bfa" },
+] as const;
+
+type IndicatorId = (typeof indicatorDefs)[number]["id"];
+
 function sma(
   candles: MarketCandle[],
   period: number
@@ -117,8 +125,9 @@ export default function GoldChart({
     ISeriesApi<"Candlestick"> | null
   >(null);
 
-  const ma20Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const ma50Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const indicatorSeriesRef = useRef<
+    Map<IndicatorId, ISeriesApi<"Line">>
+  >(new Map());
   const latestCandleRef = useRef<OHLC | null>(null);
 
   const initializedRangeRef =
@@ -131,8 +140,10 @@ export default function GoldChart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ohlc, setOhlc] = useState<OHLC | null>(null);
-  const [showMa20, setShowMa20] = useState(true);
-  const [showMa50, setShowMa50] = useState(true);
+  const [activeIndicators, setActiveIndicators] = useState<
+    IndicatorId[]
+  >([]);
+  const [indicatorMenuOpen, setIndicatorMenuOpen] = useState(false);
 
   /*
    * Create the chart only once.
@@ -205,26 +216,25 @@ export default function GoldChart({
       }
     );
 
-    const ma20Series = chart.addSeries(LineSeries, {
-      color: "#f59e0b",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
+    const indicatorSeries = indicatorSeriesRef.current;
+    indicatorSeries.clear();
 
-    const ma50Series = chart.addSeries(LineSeries, {
-      color: "#38bdf8",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
+    indicatorDefs.forEach((def) => {
+      indicatorSeries.set(
+        def.id,
+        chart.addSeries(LineSeries, {
+          color: def.color,
+          lineWidth: 1,
+          visible: false,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        })
+      );
     });
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
-    ma20Ref.current = ma20Series;
-    ma50Ref.current = ma50Series;
 
     chart.subscribeCrosshairMove((param) => {
       const item = (
@@ -261,8 +271,7 @@ export default function GoldChart({
 
       chartRef.current = null;
       candleSeriesRef.current = null;
-      ma20Ref.current = null;
-      ma50Ref.current = null;
+      indicatorSeries.clear();
     };
   }, []);
 
@@ -272,12 +281,16 @@ export default function GoldChart({
   useEffect(() => {
     const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
-    const ma20Series = ma20Ref.current;
-    const ma50Series = ma50Ref.current;
 
-    if (!chart || !candleSeries || !ma20Series || !ma50Series) {
-      return;
-    }
+    if (!chart || !candleSeries) return;
+
+    const applyIndicators = (candles: MarketCandle[]) => {
+      indicatorDefs.forEach((def) => {
+        indicatorSeriesRef.current
+          .get(def.id)
+          ?.setData(sma(candles, def.period));
+      });
+    };
 
     const controller = new AbortController();
 
@@ -292,8 +305,7 @@ export default function GoldChart({
         }));
 
       candleSeries.setData(candles);
-      ma20Series.setData(sma(result.candles, 20));
-      ma50Series.setData(sma(result.candles, 50));
+      applyIndicators(result.candles);
 
       if (initializedRangeRef.current !== timeframe) {
         let restored = false;
@@ -394,8 +406,7 @@ export default function GoldChart({
        */
       if (!cached) {
         candleSeries.setData([]);
-        ma20Series.setData([]);
-        ma50Series.setData([]);
+        applyIndicators([]);
         latestCandleRef.current = null;
         setOhlc(null);
         setStatus(`Loading XAU/USD ${timeframe} data...`);
@@ -559,16 +570,7 @@ export default function GoldChart({
           merged
         );
 
-        const ma20 = ma20Ref.current;
-        const ma50 = ma50Ref.current;
-
-        if (ma20) {
-          ma20.setData(sma(mergedCandles, 20));
-        }
-
-        if (ma50) {
-          ma50.setData(sma(mergedCandles, 50));
-        }
+        applyIndicators(mergedCandles);
 
         latestCandleRef.current = latest;
         setOhlc(latest);
@@ -618,12 +620,20 @@ export default function GoldChart({
   }, [timeframe, onSnapshot, onUpdatingChange]);
 
   useEffect(() => {
-    ma20Ref.current?.applyOptions({ visible: showMa20 });
-  }, [showMa20]);
+    indicatorDefs.forEach((def) => {
+      indicatorSeriesRef.current
+        .get(def.id)
+        ?.applyOptions({ visible: activeIndicators.includes(def.id) });
+    });
+  }, [activeIndicators]);
 
-  useEffect(() => {
-    ma50Ref.current?.applyOptions({ visible: showMa50 });
-  }, [showMa50]);
+  const toggleIndicator = (id: IndicatorId) => {
+    setActiveIndicators((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  };
 
   useEffect(() => {
     function saveWorkspace() {
@@ -713,30 +723,53 @@ export default function GoldChart({
           </>
         )}
 
-        <span className="pointer-events-auto flex gap-1">
-          <button
-            type="button"
-            onClick={() => setShowMa20((value) => !value)}
-            className={`rounded px-2 py-0.5 text-[11px] transition ${
-              showMa20
-                ? "bg-amber-400/15 text-amber-400"
-                : "text-zinc-600 hover:text-zinc-400"
-            }`}
-          >
-            MA 20
-          </button>
+        <span className="pointer-events-auto relative flex items-center gap-1">
+          {indicatorDefs
+            .filter((def) => activeIndicators.includes(def.id))
+            .map((def) => (
+              <button
+                key={def.id}
+                type="button"
+                onClick={() => toggleIndicator(def.id)}
+                title="Remove indicator"
+                className="rounded bg-white/5 px-2 py-0.5 text-[11px] transition hover:bg-white/10"
+                style={{ color: def.color }}
+              >
+                {def.label} ×
+              </button>
+            ))}
 
           <button
             type="button"
-            onClick={() => setShowMa50((value) => !value)}
-            className={`rounded px-2 py-0.5 text-[11px] transition ${
-              showMa50
-                ? "bg-sky-400/15 text-sky-400"
-                : "text-zinc-600 hover:text-zinc-400"
-            }`}
+            onClick={() => setIndicatorMenuOpen((open) => !open)}
+            className="rounded border border-white/10 px-2 py-0.5 text-[11px] text-zinc-300 transition hover:bg-white/5"
           >
-            MA 50
+            Indicators +
           </button>
+
+          {indicatorMenuOpen && (
+            <div className="absolute left-0 top-full mt-1 w-40 rounded-md border border-white/10 bg-[#0c0f14] p-1 shadow-lg">
+              {indicatorDefs.map((def) => {
+                const active = activeIndicators.includes(def.id);
+
+                return (
+                  <button
+                    key={def.id}
+                    type="button"
+                    onClick={() => toggleIndicator(def.id)}
+                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-white/5"
+                  >
+                    <span style={{ color: def.color }}>
+                      {def.label}
+                    </span>
+                    <span className="text-zinc-500">
+                      {active ? "On" : "Off"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </span>
       </div>
 
