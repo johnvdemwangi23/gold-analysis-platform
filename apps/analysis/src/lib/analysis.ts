@@ -44,6 +44,7 @@ export type AnalysisRequest = {
   transcript: string;
   title?: string;
   source?: string;
+  sourceUrl?: string;
 };
 
 export type SavedAnalysis = {
@@ -52,4 +53,15 @@ export type SavedAnalysis = {
   title: string;
   source: string;
   analysis: TranscriptAnalysis;
+};
+
+export type AnalysisListItem = {
+  id: string;
+  createdAt: string;
+  title: string;
+  source: string;
+  sourceUrl: string | null;
+  bias: GoldBias;
+  confidence: Confidence;
+  headline: string;
 };
