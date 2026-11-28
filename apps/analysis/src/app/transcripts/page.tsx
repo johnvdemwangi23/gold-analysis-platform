@@ -19,6 +19,7 @@ import type {
   SavedAnalysis,
   SpeakerTone,
   TranscriptAnalysis,
+  Trend,
 } from "@/lib/analysis";
 import { cleanTranscript, parseYouTubeVideoId } from "@/lib/transcript";
 import NewsFeed from "./NewsFeed";
@@ -144,6 +145,13 @@ function Card({
   );
 }
 
+const trendChip: Record<Trend, { label: string; chip: string }> = {
+  rising: { label: "Rising", chip: "border-sky-400/30 bg-sky-400/10 text-sky-300" },
+  falling: { label: "Falling", chip: "border-orange-400/30 bg-orange-400/10 text-orange-300" },
+  steady: { label: "Steady", chip: "border-zinc-400/30 bg-zinc-400/10 text-zinc-300" },
+  unclear: { label: "Not stated", chip: "border-zinc-600/40 bg-zinc-600/10 text-zinc-500" },
+};
+
 const effectChip: Record<Effect, { label: string; chip: string }> = {
   positive: {
     label: "Positive",
@@ -239,7 +247,7 @@ function ResultView({ analysis }: { analysis: TranscriptAnalysis }) {
 
       {analysis.keywords && analysis.keywords.length > 0 && (
         <div className="rounded-lg border border-white/10 p-4">
-          <p className="text-xs text-zinc-500">Economic keywords and their effect on gold</p>
+          <p className="text-xs text-zinc-500">Economic keywords: what was stated, and the effect on gold</p>
 
           <div className="mt-3 space-y-3">
             {analysis.keywords.map((item, index) => {
@@ -249,10 +257,24 @@ function ResultView({ analysis }: { analysis: TranscriptAnalysis }) {
                 <div key={index} className="rounded-md border border-white/5 p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold">{item.term}</span>
+                    {item.trend && (
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-xs ${trendChip[item.trend].chip}`}
+                      >
+                        {trendChip[item.trend].label}
+                      </span>
+                    )}
                     <span className={`rounded-full border px-2 py-0.5 text-xs ${chip.chip}`}>
                       {chip.label}
                     </span>
                   </div>
+
+                  {item.stated && (
+                    <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                      <span className="text-zinc-500">Stated: </span>
+                      {item.stated}
+                    </p>
+                  )}
 
                   <div className="mt-2 grid gap-2 text-xs leading-relaxed text-zinc-400 md:grid-cols-2">
                     <p>

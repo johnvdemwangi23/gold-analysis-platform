@@ -31,6 +31,11 @@ const horizonLabel = {
 
 type Filter = "all" | Effect;
 
+// The page refreshes the news by itself when the last update is older than this.
+const STALE_MS = 3 * 60 * 60 * 1000;
+// How often an open page checks again.
+const CHECK_EVERY_MS = 15 * 60 * 1000;
+
 function timeAgo(iso: string): string {
   const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
 
@@ -49,7 +54,7 @@ export default function NewsFeed() {
   const [note, setNote] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<{ ok: boolean; lastRanAt: string | null }> => {
     try {
       const response = await fetch("/api/news", { cache: "no-store" });
       const data = (await response.json()) as {
@@ -61,57 +66,85 @@ export default function NewsFeed() {
       setItems(data.items ?? []);
       setLastRun(data.lastRun ?? null);
       setError(response.ok ? null : (data.error ?? "Could not load news."));
+
+      return { ok: response.ok, lastRanAt: data.lastRun?.ranAt ?? null };
     } catch {
       setError("Could not load news.");
+
+      return { ok: false, lastRanAt: null };
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 0);
+  const refreshNow = useCallback(
+    async (automatic: boolean) => {
+      setRefreshing(true);
+      setNote(null);
+      if (!automatic) setError(null);
 
-    return () => window.clearTimeout(timer);
-  }, [load]);
+      try {
+        const response = await fetch("/api/news/refresh", { method: "POST" });
+        const data = (await response.json()) as {
+          ok: boolean;
+          skipped?: boolean;
+          reason?: string;
+          added?: number;
+          usedAi?: boolean;
+          note?: string | null;
+          error?: string;
+        };
 
-  async function refreshNow() {
-    setRefreshing(true);
-    setNote(null);
-    setError(null);
+        if (!data.ok) {
+          setError(data.error ?? "The news update failed.");
+        } else if (data.skipped) {
+          if (!automatic) {
+            setNote(`${data.reason ?? "Updated recently."} Try again in a while.`);
+          }
+        } else {
+          setNote(
+            `${automatic ? "Updated automatically." : "Update finished."} ${data.added ?? 0} relevant item(s) added.${
+              data.usedAi
+                ? ""
+                : " The AI filter was unavailable, so simple keyword rules were used."
+            }`
+          );
+        }
 
-    try {
-      const response = await fetch("/api/news/refresh", { method: "POST" });
-      const data = (await response.json()) as {
-        ok: boolean;
-        skipped?: boolean;
-        reason?: string;
-        added?: number;
-        usedAi?: boolean;
-        note?: string | null;
-        error?: string;
-      };
-
-      if (!data.ok) {
-        setError(data.error ?? "The news update failed.");
-      } else if (data.skipped) {
-        setNote(`${data.reason ?? "Updated recently."} Try again in a while.`);
-      } else {
-        setNote(
-          `Update finished. ${data.added ?? 0} relevant item(s) added.${
-            data.usedAi ? "" : " The AI filter was unavailable, so simple keyword rules were used."
-          }`
-        );
+        await load();
+      } catch {
+        setError("The news update failed.");
+      } finally {
+        setRefreshing(false);
       }
+    },
+    [load]
+  );
 
-      await load();
-    } catch {
-      setError("The news update failed.");
-    } finally {
-      setRefreshing(false);
+  // Load the list, and refresh it automatically when it is out of date.
+  // This runs when the page opens and again every 15 minutes while it stays open.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function cycle() {
+      const state = await load();
+
+      if (cancelled || !state.ok) return;
+
+      const stale = !state.lastRanAt || Date.now() - Date.parse(state.lastRanAt) > STALE_MS;
+
+      if (stale) await refreshNow(true);
     }
-  }
+
+    const first = window.setTimeout(() => void cycle(), 0);
+    const repeat = window.setInterval(() => void cycle(), CHECK_EVERY_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(first);
+      window.clearInterval(repeat);
+    };
+  }, [load, refreshNow]);
 
   const shown = useMemo(
     () => (filter === "all" ? items : items.filter((item) => item.effect === filter)),
@@ -131,13 +164,13 @@ export default function NewsFeed() {
         <div>
           <h2 className="text-base font-semibold">Gold news</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Headlines likely to move gold, collected five times a day.{" "}
+            Headlines likely to move gold. Updates automatically, about five times a day.{" "}
             {lastRun ? `Last update ${timeAgo(lastRun.ranAt)}.` : "No update yet."}
           </p>
         </div>
 
         <button
-          onClick={() => void refreshNow()}
+          onClick={() => void refreshNow(false)}
           disabled={refreshing}
           className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -178,7 +211,7 @@ export default function NewsFeed() {
           <p className="text-sm text-zinc-600">Loading...</p>
         ) : shown.length === 0 ? (
           <div className="rounded-lg border border-dashed border-white/10 p-8 text-center text-sm text-zinc-600">
-            No gold news yet. Press Update now to collect the latest headlines.
+            No gold news yet. The page collects headlines by itself, or press Update now.
           </div>
         ) : (
           shown.map((item) => {

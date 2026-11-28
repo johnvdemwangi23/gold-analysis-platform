@@ -1,5 +1,5 @@
 import { pickProvider } from "@/lib/ai";
-import { isDatabaseConfigured } from "@/lib/supabase";
+import { databaseCheck, isDatabaseConfigured } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
@@ -63,6 +63,7 @@ export async function GET() {
     },
     geminiKeySet: Boolean(process.env.GEMINI_API_KEY),
     databaseConfigured: isDatabaseConfigured(),
+    databaseTest: await databaseCheck(),
     modelsListTest: test,
   });
 }

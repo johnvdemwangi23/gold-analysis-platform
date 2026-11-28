@@ -366,3 +366,27 @@ export async function pruneNews(days = 14): Promise<void> {
     method: "DELETE",
   });
 }
+
+/*
+ * Used by the status page. Tries to read each table once and reports the
+ * result in plain words. It never returns a key or an address.
+ */
+export async function databaseCheck(): Promise<Record<string, string>> {
+  if (!isDatabaseConfigured()) {
+    return { analyses: "not configured", news_items: "not configured", news_runs: "not configured" };
+  }
+
+  const result: Record<string, string> = {};
+
+  for (const table of ["analyses", "news_items", "news_runs"]) {
+    try {
+      await request(`${table}?select=id&limit=1`);
+      result[table] = "ok";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "failed";
+      result[table] = message.replace(/https?:\/\/\S+/g, "").slice(0, 160);
+    }
+  }
+
+  return result;
+}

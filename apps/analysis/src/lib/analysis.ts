@@ -23,8 +23,13 @@ export type Effect = "positive" | "negative" | "neutral" | "mixed";
 
 export type FactorStance = "bullish" | "bearish" | "neutral" | "unclear";
 
+export type Trend = "rising" | "falling" | "steady" | "unclear";
+
 export type KeywordImpact = {
   term: string;
+  // Added later, so older saved analyses may not have them.
+  trend?: Trend;
+  stated?: string;
   effect: Effect;
   shortTerm: string;
   longTerm: string;
