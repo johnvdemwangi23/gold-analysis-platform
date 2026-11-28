@@ -55,7 +55,7 @@ const ANTHROPIC_SYSTEM = `${SYSTEM_RULES}
 
 Always answer by calling the record_gold_analysis tool.`;
 
-const GEMINI_SYSTEM = `${SYSTEM_RULES}
+const JSON_SYSTEM = `${SYSTEM_RULES}
 
 Answer with one JSON object that follows the provided schema. Output the JSON object only.`;
 
@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await runModel(provider, {
-      system: provider === "gemini" ? GEMINI_SYSTEM : ANTHROPIC_SYSTEM,
+      system: provider === "anthropic" ? ANTHROPIC_SYSTEM : JSON_SYSTEM,
       toolName: TOOL.name,
       toolDescription: TOOL.description,
       schema: TOOL.input_schema as unknown as Record<string, unknown>,
