@@ -24,7 +24,7 @@ const HISTORY_KEY = "gold-platform-analyses-v1";
 const STORE_EVENT = "gold-platform-store-change";
 const MAX_HISTORY = 15;
 const MIN_CHARS = 200;
-const MAX_CHARS = 60000;
+const MAX_CHARS = 200000;
 
 function subscribeStore(callback: () => void) {
   window.addEventListener("storage", callback);

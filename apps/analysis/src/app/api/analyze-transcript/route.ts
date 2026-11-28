@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MIN_CHARS = 200;
-const MAX_CHARS = 60000;
+const MAX_CHARS = 200000;
 
 const BIASES: GoldBias[] = ["bullish", "bearish", "neutral", "mixed"];
 const CONFIDENCES: Confidence[] = ["low", "medium", "high"];
@@ -348,7 +348,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (!result.ok) {
-      return Response.json({ error: result.error }, { status: 502 });
+      const names: Record<string, string> = {
+        llm: "Mistral",
+        gemini: "Gemini",
+        anthropic: "Anthropic",
+      };
+
+      return Response.json(
+        { error: `${names[provider] ?? provider}: ${result.error}` },
+        { status: 502 }
+      );
     }
 
     const analysis = toAnalysis(result.raw, transcript);
