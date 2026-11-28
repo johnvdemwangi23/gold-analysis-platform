@@ -286,7 +286,13 @@ function describeFailure(error: unknown): string {
       ? String((cause as { code: unknown }).code)
       : "";
 
-  return `(${error.name}: ${error.message}${code ? `, ${code}` : ""})`.slice(0, 300);
+  // Never show anything that could be a key or a full address.
+  const safeMessage = error.message
+    .replace(/https?:\/\/\S+/gi, "[address hidden]")
+    .replace(/\b[A-Za-z0-9_-]{20,}\b/g, "[hidden]")
+    .replace(/\S*(?:sk-|key|token)\S*/gi, "[hidden]");
+
+  return `(${error.name}: ${safeMessage}${code ? `, ${code}` : ""})`.slice(0, 200);
 }
 
 export async function POST(request: NextRequest) {
