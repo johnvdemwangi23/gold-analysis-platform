@@ -1,5 +1,4 @@
 import type { NextRequest } from "next/server";
-import { checkAccess } from "@/lib/access";
 import { parseYouTubeVideoId } from "@/lib/transcript";
 import { parseCaptionXml } from "@/lib/youtube";
 
@@ -76,10 +75,6 @@ function isYouTubeUrl(value: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = checkAccess(request);
-
-  if (denied) return denied;
-
   let link = "";
 
   try {

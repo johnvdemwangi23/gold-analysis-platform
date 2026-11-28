@@ -49,6 +49,7 @@ export type AnalysisRequest = {
 
 export type SavedAnalysis = {
   id: string;
+  ref?: string;
   createdAt: string;
   title: string;
   source: string;
@@ -57,6 +58,7 @@ export type SavedAnalysis = {
 
 export type AnalysisListItem = {
   id: string;
+  ref: string | null;
   createdAt: string;
   title: string;
   source: string;

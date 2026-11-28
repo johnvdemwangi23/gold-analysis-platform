@@ -1,3 +1,4 @@
+import { generateRef } from "@/lib/ref";
 import type {
   AnalysisListItem,
   Confidence,
@@ -25,6 +26,7 @@ export function isDatabaseConfigured(): boolean {
 
 type Row = {
   id: string;
+  ref?: string | null;
   created_at: string;
   title: string;
   source: string;
@@ -88,36 +90,65 @@ async function request(
 }
 
 export async function saveAnalysis(input: {
+  ref?: string;
   title: string;
   source: string;
   sourceUrl: string | null;
   transcript: string;
   analysis: TranscriptAnalysis;
-}): Promise<string> {
-  const data = (await request("analyses", {
-    method: "POST",
-    prefer: "return=representation",
-    body: JSON.stringify({
-      title: input.title,
-      source: input.source,
-      source_url: input.sourceUrl,
-      transcript: input.transcript,
-      analysis: input.analysis,
-      bias: input.analysis.goldVerdict.bias,
-      confidence: input.analysis.goldVerdict.confidence,
-      headline: input.analysis.headline,
-    }),
-  })) as Row[];
+}): Promise<{ id: string; ref: string | null }> {
+  const base = {
+    title: input.title,
+    source: input.source,
+    source_url: input.sourceUrl,
+    transcript: input.transcript,
+    analysis: input.analysis,
+    bias: input.analysis.goldVerdict.bias,
+    confidence: input.analysis.goldVerdict.confidence,
+    headline: input.analysis.headline,
+  };
 
-  return data[0].id;
+  // The ref column is unique. On the rare clash, draw a new reference.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const ref = attempt === 0 && input.ref ? input.ref : generateRef();
+
+    try {
+      const data = (await request("analyses", {
+        method: "POST",
+        prefer: "return=representation",
+        body: JSON.stringify({ ...base, ref }),
+      })) as Row[];
+
+      return { id: data[0].id, ref: data[0].ref ?? ref };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+
+      if (/duplicate key/i.test(message)) continue;
+
+      if (/ref/i.test(message) && /column/i.test(message)) {
+        // Migration 0002 has not been run yet: save without a reference.
+        const data = (await request("analyses", {
+          method: "POST",
+          prefer: "return=representation",
+          body: JSON.stringify(base),
+        })) as Row[];
+
+        return { id: data[0].id, ref: null };
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error("Could not create a unique reference.");
 }
 
 export async function listAnalyses(limit = 50): Promise<AnalysisListItem[]> {
-  const data = (await request(
-    `analyses?select=id,created_at,title,source,source_url,bias,confidence,headline&order=created_at.desc&limit=${limit}`
-  )) as Pick<
+  const columns = "id,created_at,title,source,source_url,bias,confidence,headline";
+  type ListRow = Pick<
     Row,
     | "id"
+    | "ref"
     | "created_at"
     | "title"
     | "source"
@@ -125,10 +156,24 @@ export async function listAnalyses(limit = 50): Promise<AnalysisListItem[]> {
     | "bias"
     | "confidence"
     | "headline"
-  >[];
+  >;
+
+  let data: ListRow[];
+
+  try {
+    data = (await request(
+      `analyses?select=ref,${columns}&order=created_at.desc&limit=${limit}`
+    )) as ListRow[];
+  } catch {
+    // The ref column does not exist until migration 0002 has been run.
+    data = (await request(
+      `analyses?select=${columns}&order=created_at.desc&limit=${limit}`
+    )) as ListRow[];
+  }
 
   return data.map((row) => ({
     id: row.id,
+    ref: row.ref ?? null,
     createdAt: row.created_at,
     title: row.title,
     source: row.source,

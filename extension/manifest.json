@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Gold Platform Transcript Helper",
+  "version": "1.0.0",
+  "description": "Copies the transcript of the YouTube video you are watching, or sends it straight to your Gold Analysis Platform.",
+  "permissions": ["storage", "clipboardWrite"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["youtube.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gold-analysis-platform-zmo1.vercel.app/transcripts*"],
+      "js": ["site.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

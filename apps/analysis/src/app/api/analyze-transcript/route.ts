@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
-import { checkAccess } from "@/lib/access";
 import { missingKeyMessage, pickProvider, runModel } from "@/lib/ai";
 import { cleanTranscript } from "@/lib/transcript";
+import { generateRef } from "@/lib/ref";
 import { isDatabaseConfigured, saveAnalysis } from "@/lib/supabase";
 import type {
   Confidence,
@@ -274,10 +274,6 @@ function toAnalysis(
 }
 
 export async function POST(request: NextRequest) {
-  const denied = checkAccess(request);
-
-  if (denied) return denied;
-
   const provider = pickProvider();
 
   if (!provider) {
@@ -365,17 +361,22 @@ export async function POST(request: NextRequest) {
     }
 
     let savedId: string | null = null;
+    let savedRef: string | null = generateRef();
     let saveError: string | null = null;
 
     if (isDatabaseConfigured()) {
       try {
-        savedId = await saveAnalysis({
+        const saved = await saveAnalysis({
+          ref: savedRef ?? generateRef(),
           title,
           source,
           sourceUrl,
           transcript,
           analysis,
         });
+
+        savedId = saved.id;
+        savedRef = saved.ref ?? savedRef;
       } catch (error) {
         console.error("Saving analysis failed:", error);
         saveError = "The analysis could not be saved to the database.";
@@ -385,6 +386,7 @@ export async function POST(request: NextRequest) {
     return Response.json({
       analysis,
       savedId,
+      savedRef,
       saveError,
       provider: result.provider,
       model: result.model,

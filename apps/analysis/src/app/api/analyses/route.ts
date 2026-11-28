@@ -1,14 +1,8 @@
-import type { NextRequest } from "next/server";
-import { checkAccess } from "@/lib/access";
 import { isDatabaseConfigured, listAnalyses } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
-  const denied = checkAccess(request);
-
-  if (denied) return denied;
-
+export async function GET() {
   if (!isDatabaseConfigured()) {
     return Response.json(
       { configured: false, error: "Database is not configured." },

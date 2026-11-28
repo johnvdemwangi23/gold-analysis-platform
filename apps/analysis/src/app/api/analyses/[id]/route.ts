@@ -1,5 +1,3 @@
-import type { NextRequest } from "next/server";
-import { checkAccess } from "@/lib/access";
 import {
   deleteAnalysis,
   getAnalysis,
@@ -13,11 +11,7 @@ const UUID =
 
 type Context = { params: Promise<{ id: string }> };
 
-async function guard(request: NextRequest, context: Context) {
-  const denied = checkAccess(request);
-
-  if (denied) return { response: denied, id: "" };
-
+async function guard(context: Context) {
   const { id } = await context.params;
 
   if (!UUID.test(id)) {
@@ -40,8 +34,8 @@ async function guard(request: NextRequest, context: Context) {
   return { response: null, id };
 }
 
-export async function GET(request: NextRequest, context: Context) {
-  const { response, id } = await guard(request, context);
+export async function GET(_request: Request, context: Context) {
+  const { response, id } = await guard(context);
 
   if (response) return response;
 
@@ -61,8 +55,8 @@ export async function GET(request: NextRequest, context: Context) {
   }
 }
 
-export async function DELETE(request: NextRequest, context: Context) {
-  const { response, id } = await guard(request, context);
+export async function DELETE(_request: Request, context: Context) {
+  const { response, id } = await guard(context);
 
   if (response) return response;
 

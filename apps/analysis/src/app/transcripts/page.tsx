@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -20,11 +21,8 @@ import type {
 import { cleanTranscript, parseYouTubeVideoId } from "@/lib/transcript";
 
 const HISTORY_KEY = "gold-platform-analyses-v1";
-const ACCESS_CODE_KEY = "gold-platform-access-code";
 const STORE_EVENT = "gold-platform-store-change";
 const MAX_HISTORY = 15;
-const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-const CODE_LENGTH = 24;
 const MIN_CHARS = 200;
 const MAX_CHARS = 60000;
 
@@ -54,29 +52,6 @@ function setStored(key: string, value: string) {
   }
 
   window.dispatchEvent(new Event(STORE_EVENT));
-}
-
-/*
- * 24 characters from a 31 character alphabet (no 0, O, 1, I or L, which are
- * easy to confuse), shown in six groups of four. That is about 119 bits.
- * Bytes at or above the limit are skipped so every character is equally likely.
- */
-function generateAccessCode(): string {
-  const limit = 256 - (256 % CODE_ALPHABET.length);
-  const chars: string[] = [];
-
-  while (chars.length < CODE_LENGTH) {
-    const bytes = new Uint8Array(32);
-    window.crypto.getRandomValues(bytes);
-
-    for (const byte of bytes) {
-      if (byte < limit && chars.length < CODE_LENGTH) {
-        chars.push(CODE_ALPHABET[byte % CODE_ALPHABET.length]);
-      }
-    }
-  }
-
-  return (chars.join("").match(/.{4}/g) ?? []).join("-");
 }
 
 function parseHistory(raw: string | null): SavedAnalysis[] {
@@ -285,7 +260,6 @@ type AnalysisPayload = {
 
 export default function TranscriptsPage() {
   const historyRaw = useStored(HISTORY_KEY);
-  const storedCode = useStored(ACCESS_CODE_KEY);
 
   const history = useMemo(() => parseHistory(historyRaw), [historyRaw]);
 
@@ -294,10 +268,9 @@ export default function TranscriptsPage() {
   const [transcript, setTranscript] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCode, setShowCode] = useState(false);
-  const [codeCopied, setCodeCopied] = useState(false);
   const [current, setCurrent] = useState<TranscriptAnalysis | null>(null);
   const [currentLabel, setCurrentLabel] = useState("");
+  const [currentRef, setCurrentRef] = useState<string | null>(null);
   const [currentLink, setCurrentLink] = useState<string | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [youtubeLoading, setYoutubeLoading] = useState(false);
@@ -312,15 +285,11 @@ export default function TranscriptsPage() {
   const length = cleaned.length;
   const tooShort = length < MIN_CHARS;
   const tooLong = length > MAX_CHARS;
-  const accessCode = storedCode ?? "";
   const missingDetails = title.trim().length < 3 || source.trim().length < 2;
 
   const loadDb = useCallback(async () => {
     try {
-      const response = await fetch("/api/analyses", {
-        headers: { "x-access-code": accessCode },
-        cache: "no-store",
-      });
+      const response = await fetch("/api/analyses", { cache: "no-store" });
 
       if (!response.ok) {
         setDbItems(null);
@@ -333,17 +302,15 @@ export default function TranscriptsPage() {
     } catch {
       setDbItems(null);
     }
-  }, [accessCode]);
+  }, []);
 
   useEffect(() => {
-    if (accessCode.length < 8) return;
-
     const timer = window.setTimeout(() => {
       void loadDb();
-    }, 600);
+    }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [accessCode, loadDb]);
+  }, [loadDb]);
 
   async function fetchYoutube(
     url: string = youtubeUrl,
@@ -356,10 +323,7 @@ export default function TranscriptsPage() {
     try {
       const response = await fetch("/api/youtube-transcript", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-access-code": accessCode,
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ url }),
       });
 
@@ -415,14 +379,11 @@ export default function TranscriptsPage() {
     }
   }
 
-  async function openSaved(id: string, label: string) {
+  async function openSaved(id: string, label: string, ref: string | null) {
     setError(null);
 
     try {
-      const response = await fetch(`/api/analyses/${id}`, {
-        headers: { "x-access-code": accessCode },
-        cache: "no-store",
-      });
+      const response = await fetch(`/api/analyses/${id}`, { cache: "no-store" });
 
       const data = (await response.json()) as {
         analysis?: TranscriptAnalysis;
@@ -436,6 +397,7 @@ export default function TranscriptsPage() {
 
       setCurrent(data.analysis);
       setCurrentLabel(label);
+      setCurrentRef(ref);
       setCurrentLink(data.sourceUrl ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open this analysis.");
@@ -450,26 +412,9 @@ export default function TranscriptsPage() {
     try {
       await fetch(`/api/analyses/${id}`, {
         method: "DELETE",
-        headers: { "x-access-code": accessCode },
       });
     } finally {
       void loadDb();
-    }
-  }
-
-  function handleGenerateCode() {
-    setStored(ACCESS_CODE_KEY, generateAccessCode());
-    setShowCode(true);
-    setCodeCopied(false);
-  }
-
-  async function handleCopyCode() {
-    try {
-      await navigator.clipboard.writeText(accessCode);
-      setCodeCopied(true);
-      window.setTimeout(() => setCodeCopied(false), 1800);
-    } catch {
-      setShowCode(true);
     }
   }
 
@@ -481,16 +426,14 @@ export default function TranscriptsPage() {
     try {
       const response = await fetch("/api/analyze-transcript", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-access-code": accessCode,
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload ?? { transcript, title, source, sourceUrl }),
       });
 
       const data = (await response.json()) as {
         analysis?: TranscriptAnalysis;
         savedId?: string | null;
+        savedRef?: string | null;
         saveError?: string | null;
         error?: string;
       };
@@ -507,8 +450,11 @@ export default function TranscriptsPage() {
 
       const label = (payload?.title ?? title).trim();
 
+      const ref = data.savedRef ?? null;
+
       const entry: SavedAnalysis = {
         id: `${Date.now()}`,
+        ref: ref ?? undefined,
         createdAt: new Date().toISOString(),
         title: label,
         source: (payload?.source ?? source).trim(),
@@ -522,6 +468,7 @@ export default function TranscriptsPage() {
 
       setCurrent(data.analysis);
       setCurrentLabel(label);
+      setCurrentRef(ref);
       setCurrentLink(payload ? payload.sourceUrl : sourceUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The analysis failed.");
@@ -529,6 +476,69 @@ export default function TranscriptsPage() {
       setLoading(false);
     }
   }
+
+  const latest = useRef({ autoAnalyse, analyze });
+
+  useEffect(() => {
+    latest.current = { autoAnalyse, analyze };
+  });
+
+  // Receives a transcript from the browser extension (same page, same origin).
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window || event.origin !== window.location.origin) {
+        return;
+      }
+
+      const data: unknown = event.data;
+
+      if (typeof data !== "object" || data === null) return;
+
+      const message = data as { type?: unknown; payload?: unknown };
+
+      if (message.type === "gold-extension-ping") {
+        window.postMessage({ type: "gold-page-ready" }, window.location.origin);
+        return;
+      }
+
+      if (message.type !== "gold-extension-transcript") return;
+
+      const raw = message.payload as Record<string, unknown> | null;
+
+      if (!raw || typeof raw.transcript !== "string" || !raw.transcript.trim()) {
+        return;
+      }
+
+      const payload: AnalysisPayload = {
+        transcript: raw.transcript,
+        title: typeof raw.title === "string" ? raw.title : "",
+        source: typeof raw.source === "string" ? raw.source : "",
+        sourceUrl: typeof raw.sourceUrl === "string" ? raw.sourceUrl : null,
+      };
+
+      setTranscript(payload.transcript);
+      setTitle(payload.title);
+      setSource(payload.source);
+      setSourceUrl(payload.sourceUrl);
+      setError(null);
+
+      const { autoAnalyse: auto, analyze: run } = latest.current;
+
+      if (auto) {
+        setYoutubeNote("Transcript received from the browser extension. Analysing now.");
+        void run(payload);
+      } else {
+        setYoutubeNote(
+          "Transcript received from the browser extension. Check the title and source, then analyse."
+        );
+      }
+    };
+
+    window.addEventListener("message", onMessage);
+    window.postMessage({ type: "gold-page-ready" }, window.location.origin);
+
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   function removeEntry(id: string) {
     setStored(HISTORY_KEY, JSON.stringify(history.filter((item) => item.id !== id)));
@@ -575,7 +585,6 @@ export default function TranscriptsPage() {
 
                       if (
                         autoAnalyse &&
-                        accessCode &&
                         !youtubeLoading &&
                         !loading &&
                         parseYouTubeVideoId(pasted)
@@ -591,7 +600,7 @@ export default function TranscriptsPage() {
                   <button
                     type="button"
                     onClick={() => void fetchYoutube()}
-                    disabled={!videoId || !accessCode || youtubeLoading || loading}
+                    disabled={!videoId || youtubeLoading || loading}
                     className="rounded-md border border-white/10 px-3 text-xs text-zinc-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {youtubeLoading ? "Getting..." : "Get transcript"}
@@ -607,9 +616,7 @@ export default function TranscriptsPage() {
                     ? "Works with YouTube links only. The button stays off until one is pasted."
                     : !videoId
                       ? "That is not a YouTube link. Only YouTube links are supported."
-                      : !accessCode
-                        ? "Link recognised. Enter the access code below to turn the button on."
-                        : "YouTube link recognised."}
+                      : "YouTube link recognised."}
                 </p>
 
                 <label className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
@@ -676,59 +683,9 @@ export default function TranscriptsPage() {
                 {length > 0 && tooShort ? ` (at least ${MIN_CHARS} needed)` : ""}
               </p>
 
-              <div>
-                <span className="text-xs text-zinc-400">
-                  Access code <span className="text-amber-400">*</span>
-                </span>
-
-                <div className="mt-1 flex gap-2">
-                  <input
-                    type={showCode ? "text" : "password"}
-                    value={accessCode}
-                    onChange={(event) => setStored(ACCESS_CODE_KEY, event.target.value)}
-                    placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="min-w-0 flex-1 rounded-md border border-white/10 bg-[#090b0f] px-3 py-2 font-mono text-xs outline-none placeholder:text-zinc-600 focus:border-amber-400/50"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setShowCode((value) => !value)}
-                    className="rounded-md border border-white/10 px-2.5 text-xs text-zinc-300 transition hover:bg-white/5"
-                  >
-                    {showCode ? "Hide" : "Show"}
-                  </button>
-                </div>
-
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleGenerateCode}
-                    className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-white/5"
-                  >
-                    Generate new code
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyCode}
-                    disabled={!accessCode}
-                    className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {codeCopied ? "Copied" : "Copy"}
-                  </button>
-                </div>
-
-                <p className="mt-2 text-xs leading-relaxed text-zinc-600">
-                  This must match ANALYSIS_ACCESS_CODE in Vercel. After generating a
-                  code, copy it there and redeploy.
-                </p>
-              </div>
-
               <button
                 onClick={() => void analyze()}
-                disabled={loading || tooShort || tooLong || missingDetails || !accessCode}
+                disabled={loading || tooShort || tooLong || missingDetails}
                 className="w-full rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {loading ? "Analysing..." : "Analyse for gold"}
@@ -767,10 +724,17 @@ export default function TranscriptsPage() {
                   {dbItems.map((item) => (
                     <li key={item.id} className="flex items-center gap-2">
                       <button
-                        onClick={() => openSaved(item.id, item.title)}
+                        onClick={() =>
+                          openSaved(item.id, item.title, item.ref)
+                        }
                         className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left transition hover:bg-white/5"
                       >
                         <span className="block truncate text-sm text-zinc-200">
+                          {item.ref && (
+                            <span className="mr-2 font-mono text-xs text-amber-400/80">
+                              {item.ref}
+                            </span>
+                          )}
                           {item.title}
                         </span>
                         <span className="block text-xs text-zinc-600">
@@ -799,11 +763,17 @@ export default function TranscriptsPage() {
                       onClick={() => {
                         setCurrent(item.analysis);
                         setCurrentLabel(item.title);
+                        setCurrentRef(item.ref ?? null);
                         setCurrentLink(null);
                       }}
                       className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left transition hover:bg-white/5"
                     >
                       <span className="block truncate text-sm text-zinc-200">
+                        {item.ref && (
+                          <span className="mr-2 font-mono text-xs text-amber-400/80">
+                            {item.ref}
+                          </span>
+                        )}
                         {item.title}
                       </span>
                       <span className="block text-xs text-zinc-600">
@@ -829,6 +799,14 @@ export default function TranscriptsPage() {
         <section>
           {current ? (
             <div>
+              {currentRef && (
+                <span
+                  title="Transcript ID"
+                  className="mb-2 inline-block rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-mono text-xs text-amber-300"
+                >
+                  {currentRef}
+                </span>
+              )}
               <p className="text-sm text-zinc-500">{currentLabel}</p>
               {currentLink && (
                 <a
