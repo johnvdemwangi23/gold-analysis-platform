@@ -1,0 +1,18 @@
+name: News refresh
+
+# Collects gold news five times a day (UTC): 05:00, 09:00, 13:00, 17:00, 21:00.
+# That is 08:00, 12:00, 16:00, 20:00 and 00:00 in Kenya.
+on:
+  schedule:
+    - cron: "0 5,9,13,17,21 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the site to collect news
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 15 --max-time 100 \
+            -X POST "https://gold-analysis-platform-zmo1.vercel.app/api/news/refresh"

@@ -19,6 +19,26 @@ export type RateOutlook =
   | "higher_for_longer"
   | "unclear";
 
+export type Effect = "positive" | "negative" | "neutral" | "mixed";
+
+export type FactorStance = "bullish" | "bearish" | "neutral" | "unclear";
+
+export type KeywordImpact = {
+  term: string;
+  effect: Effect;
+  shortTerm: string;
+  longTerm: string;
+};
+
+export type Factor = { stance: FactorStance; note: string };
+
+export type FactorSet = {
+  bonds: Factor;
+  interestRates: Factor;
+  inflation: Factor;
+  geopolitics: Factor;
+};
+
 export type TranscriptAnalysis = {
   headline: string;
   summary: string;
@@ -38,6 +58,10 @@ export type TranscriptAnalysis = {
   risks: string[];
   watchNext: string[];
   droppedQuotes: number;
+  // Added later, so older saved analyses may not have them.
+  keywords?: KeywordImpact[];
+  factors?: FactorSet;
+  combinedView?: string;
 };
 
 export type AnalysisRequest = {

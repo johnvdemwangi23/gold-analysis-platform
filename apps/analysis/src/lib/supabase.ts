@@ -1,4 +1,5 @@
 import { generateRef } from "@/lib/ref";
+import type { NewsItem, NewsRun } from "@/lib/newsTypes";
 import type {
   AnalysisListItem,
   Confidence,
@@ -210,4 +211,158 @@ export async function getAnalysis(id: string): Promise<{
 
 export async function deleteAnalysis(id: string): Promise<void> {
   await request(`analyses?id=eq.${id}`, { method: "DELETE" });
+}
+
+/* ---------------------------------------------------------------- news */
+
+type NewsRow = {
+  id: string;
+  url: string;
+  title: string;
+  source: string;
+  published_at: string;
+  relevance: number;
+  effect: NewsItem["effect"];
+  horizon: NewsItem["horizon"];
+  topics: NewsItem["topics"] | null;
+  why: string | null;
+};
+
+const NEWS_COLUMNS =
+  "id,url,title,source,published_at,relevance,effect,horizon,topics,why";
+
+function toNewsItem(row: NewsRow): NewsItem {
+  return {
+    id: row.id,
+    title: row.title,
+    url: row.url,
+    source: row.source,
+    publishedAt: row.published_at,
+    relevance: row.relevance,
+    effect: row.effect,
+    horizon: row.horizon,
+    topics: row.topics ?? [],
+    why: row.why ?? "",
+  };
+}
+
+function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 86400000).toISOString();
+}
+
+export async function recentNewsUrls(days = 4): Promise<Set<string>> {
+  const data = (await request(
+    `news_items?select=url&fetched_at=gte.${daysAgoIso(days)}&limit=1000`
+  )) as { url: string }[];
+
+  return new Set(data.map((row) => row.url));
+}
+
+export async function saveNewsItems(
+  items: {
+    url: string;
+    title: string;
+    source: string;
+    publishedAt: string;
+    relevance: number;
+    effect: NewsItem["effect"];
+    horizon: NewsItem["horizon"];
+    topics: NewsItem["topics"];
+    why: string;
+  }[]
+): Promise<void> {
+  if (items.length === 0) return;
+
+  await request("news_items?on_conflict=url", {
+    method: "POST",
+    prefer: "resolution=ignore-duplicates,return=minimal",
+    body: JSON.stringify(
+      items.map((item) => ({
+        url: item.url,
+        title: item.title,
+        source: item.source,
+        published_at: item.publishedAt,
+        relevance: item.relevance,
+        effect: item.effect,
+        horizon: item.horizon,
+        topics: item.topics,
+        why: item.why,
+      }))
+    ),
+  });
+}
+
+export async function listNews(
+  limit = 60,
+  minRelevance = 6,
+  days = 7
+): Promise<NewsItem[]> {
+  const data = (await request(
+    `news_items?select=${NEWS_COLUMNS}&relevance=gte.${minRelevance}&published_at=gte.${daysAgoIso(
+      days
+    )}&order=published_at.desc&limit=${limit}`
+  )) as NewsRow[];
+
+  return data.map(toNewsItem);
+}
+
+export async function recentNewsForContext(limit = 8): Promise<NewsItem[]> {
+  const data = (await request(
+    `news_items?select=${NEWS_COLUMNS}&relevance=gte.7&published_at=gte.${daysAgoIso(
+      3
+    )}&order=published_at.desc&limit=${limit}`
+  )) as NewsRow[];
+
+  return data.map(toNewsItem);
+}
+
+export async function lastNewsRun(): Promise<NewsRun | null> {
+  const data = (await request(
+    "news_runs?select=ran_at,fetched,added,used_ai,note&order=ran_at.desc&limit=1"
+  )) as {
+    ran_at: string;
+    fetched: number;
+    added: number;
+    used_ai: boolean;
+    note: string | null;
+  }[];
+
+  const row = data[0];
+
+  return row
+    ? {
+        ranAt: row.ran_at,
+        fetched: row.fetched,
+        added: row.added,
+        usedAi: row.used_ai,
+        note: row.note,
+      }
+    : null;
+}
+
+export async function recordNewsRun(run: {
+  fetched: number;
+  added: number;
+  usedAi: boolean;
+  note: string | null;
+}): Promise<void> {
+  await request("news_runs", {
+    method: "POST",
+    prefer: "return=minimal",
+    body: JSON.stringify({
+      fetched: run.fetched,
+      added: run.added,
+      used_ai: run.usedAi,
+      note: run.note,
+    }),
+  });
+}
+
+export async function pruneNews(days = 14): Promise<void> {
+  await request(`news_items?fetched_at=lt.${daysAgoIso(days)}`, {
+    method: "DELETE",
+  });
+  await request(`news_runs?ran_at=lt.${daysAgoIso(days)}`, {
+    method: "DELETE",
+  });
 }

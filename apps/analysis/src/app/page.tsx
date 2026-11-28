@@ -350,11 +350,8 @@ export default function Home() {
                 href="/transcripts"
                 className="block rounded-md px-3 py-2 transition hover:bg-white/5 hover:text-white"
               >
-                Transcripts
+                News Analysis
               </Link>
-              <div className="px-3 py-2 text-zinc-600">
-                News (soon)
-              </div>
             </div>
           </div>
         </aside>

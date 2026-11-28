@@ -12,6 +12,8 @@ import {
 import type {
   AnalysisListItem,
   Direction,
+  Effect,
+  FactorStance,
   GoldBias,
   RateOutlook,
   SavedAnalysis,
@@ -19,6 +21,7 @@ import type {
   TranscriptAnalysis,
 } from "@/lib/analysis";
 import { cleanTranscript, parseYouTubeVideoId } from "@/lib/transcript";
+import NewsFeed from "./NewsFeed";
 
 const HISTORY_KEY = "gold-platform-analyses-v1";
 const STORE_EVENT = "gold-platform-store-change";
@@ -141,6 +144,44 @@ function Card({
   );
 }
 
+const effectChip: Record<Effect, { label: string; chip: string }> = {
+  positive: {
+    label: "Positive",
+    chip: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  },
+  negative: {
+    label: "Negative",
+    chip: "border-red-400/30 bg-red-400/10 text-red-300",
+  },
+  mixed: {
+    label: "Mixed",
+    chip: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  },
+  neutral: {
+    label: "Neutral",
+    chip: "border-zinc-400/30 bg-zinc-400/10 text-zinc-300",
+  },
+};
+
+const stanceChip: Record<FactorStance, { label: string; chip: string }> = {
+  bullish: {
+    label: "Bullish for gold",
+    chip: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  },
+  bearish: {
+    label: "Bearish for gold",
+    chip: "border-red-400/30 bg-red-400/10 text-red-300",
+  },
+  neutral: {
+    label: "Neutral",
+    chip: "border-zinc-400/30 bg-zinc-400/10 text-zinc-300",
+  },
+  unclear: {
+    label: "Unclear",
+    chip: "border-zinc-400/30 bg-zinc-400/10 text-zinc-400",
+  },
+};
+
 function ResultView({ analysis }: { analysis: TranscriptAnalysis }) {
   const style = biasStyle[analysis.goldVerdict.bias];
 
@@ -193,6 +234,82 @@ function ResultView({ analysis }: { analysis: TranscriptAnalysis }) {
           <p className="mt-2 text-sm leading-relaxed text-zinc-300">
             {analysis.inflationGrowth}
           </p>
+        </div>
+      )}
+
+      {analysis.keywords && analysis.keywords.length > 0 && (
+        <div className="rounded-lg border border-white/10 p-4">
+          <p className="text-xs text-zinc-500">Economic keywords and their effect on gold</p>
+
+          <div className="mt-3 space-y-3">
+            {analysis.keywords.map((item, index) => {
+              const chip = effectChip[item.effect];
+
+              return (
+                <div key={index} className="rounded-md border border-white/5 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">{item.term}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-xs ${chip.chip}`}>
+                      {chip.label}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid gap-2 text-xs leading-relaxed text-zinc-400 md:grid-cols-2">
+                    <p>
+                      <span className="text-zinc-500">Short term: </span>
+                      {item.shortTerm || "Not clear from the text."}
+                    </p>
+                    <p>
+                      <span className="text-zinc-500">Long term: </span>
+                      {item.longTerm || "Not clear from the text."}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {analysis.factors && (
+        <div className="rounded-lg border border-white/10 p-4">
+          <p className="text-xs text-zinc-500">Wider drivers combined with the text</p>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {(
+              [
+                ["Bonds and yields", analysis.factors.bonds],
+                ["Interest rates", analysis.factors.interestRates],
+                ["Inflation", analysis.factors.inflation],
+                ["Geopolitics", analysis.factors.geopolitics],
+              ] as const
+            ).map(([label, factor]) => {
+              const chip = stanceChip[factor.stance];
+
+              return (
+                <div key={label} className="rounded-md border border-white/5 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">{label}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-xs ${chip.chip}`}>
+                      {chip.label}
+                    </span>
+                  </div>
+                  {factor.note && (
+                    <p className="mt-2 text-xs leading-relaxed text-zinc-400">{factor.note}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {analysis.combinedView && (
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="text-xs text-zinc-500">Combined view</p>
+              <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+                {analysis.combinedView}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -279,6 +396,7 @@ export default function TranscriptsPage() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [dbItems, setDbItems] = useState<AnalysisListItem[] | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
+  const [tab, setTab] = useState<"news" | "analyse">("news");
 
   const cleaned = useMemo(() => cleanTranscript(transcript), [transcript]);
   const videoId = parseYouTubeVideoId(youtubeUrl);
@@ -516,6 +634,7 @@ export default function TranscriptsPage() {
         sourceUrl: typeof raw.sourceUrl === "string" ? raw.sourceUrl : null,
       };
 
+      setTab("analyse");
       setTranscript(payload.transcript);
       setTitle(payload.title);
       setSource(payload.source);
@@ -549,7 +668,7 @@ export default function TranscriptsPage() {
       <header className="flex h-16 items-center justify-between border-b border-white/10 px-6">
         <div>
           <h1 className="text-lg font-semibold tracking-wide">GOLD Analysis Platform</h1>
-          <p className="text-xs text-zinc-500">Transcript Analysis</p>
+          <p className="text-xs text-zinc-500">News Analysis</p>
         </div>
 
         <nav className="flex items-center gap-2 text-sm">
@@ -560,11 +679,35 @@ export default function TranscriptsPage() {
             Chart
           </Link>
           <span className="rounded-md bg-white/5 px-3 py-1.5 text-white">
-            Transcripts
+            News Analysis
           </span>
         </nav>
       </header>
 
+      <div className="mx-auto flex max-w-7xl gap-2 px-6 pt-4 text-sm">
+        {(
+          [
+            ["news", "Gold news"],
+            ["analyse", "Analyse text"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`rounded-md px-3 py-1.5 transition ${
+              tab === id
+                ? "bg-amber-400/10 text-amber-300"
+                : "text-zinc-400 hover:bg-white/5 hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "news" && <NewsFeed />}
+
+      {tab === "analyse" && (
       <div className="mx-auto grid max-w-7xl gap-6 p-6 lg:grid-cols-[400px_1fr]">
         <section className="space-y-4">
           <div className="rounded-lg border border-white/10 bg-[#0c0f14] p-4">
@@ -829,6 +972,7 @@ export default function TranscriptsPage() {
           )}
         </section>
       </div>
+      )}
     </main>
   );
 }
