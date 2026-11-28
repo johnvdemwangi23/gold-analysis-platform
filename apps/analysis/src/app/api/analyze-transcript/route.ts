@@ -273,6 +273,22 @@ function toAnalysis(
   };
 }
 
+/*
+ * Short, key-free description of what went wrong, so a failure can be traced
+ * from the page without opening the Vercel logs.
+ */
+function describeFailure(error: unknown): string {
+  if (!(error instanceof Error)) return "";
+
+  const cause = (error as { cause?: unknown }).cause;
+  const code =
+    typeof cause === "object" && cause !== null && "code" in cause
+      ? String((cause as { code: unknown }).code)
+      : "";
+
+  return `(${error.name}: ${error.message}${code ? `, ${code}` : ""})`.slice(0, 300);
+}
+
 export async function POST(request: NextRequest) {
   const provider = pickProvider();
 
@@ -411,7 +427,7 @@ export async function POST(request: NextRequest) {
       {
         error: timedOut
           ? "The analysis took too long. Try a shorter text."
-          : "Unable to reach the analysis service.",
+          : `Unable to reach the analysis service. ${describeFailure(error)}`.trim(),
       },
       { status: 500 }
     );
